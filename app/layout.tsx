@@ -1,5 +1,6 @@
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
+import UpdateWatcher from "@/components/UpdateWatcher";
 
 export const metadata: Metadata = {
   title: "ClipWar — War Room",
@@ -15,7 +16,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="fr">
-      <body>{children}</body>
+      <body><UpdateWatcher />{children}</body>
     </html>
   );
 }
