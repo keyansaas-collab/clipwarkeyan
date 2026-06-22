@@ -8,6 +8,9 @@ const PATHS: Record<string, React.ReactNode> = {
   user: (<><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4 4-6 8-6s8 2 8 6" /></>),
   plus: <path d="M12 5v14M5 12h14" />,
   alert: <path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />,
+  folder: <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />,
+  trophy: (<><path d="M8 4h8v5a4 4 0 0 1-8 0z" /><path d="M8 7H5a2 2 0 0 0 0 4h1M16 7h3a2 2 0 0 1 0 4h-1M9 20h6M12 13v3" /></>),
+  wallet: (<><rect x="3" y="6" width="18" height="13" rx="2" /><path d="M3 10h18M16 14h2" /></>),
 };
 
 export function Icon({ name }: { name: string }) {

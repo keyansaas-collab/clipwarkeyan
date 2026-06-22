@@ -70,3 +70,49 @@ export const alerts: Alert[] = [
 export const campName = (id: string) => campaigns.find((c) => c.id === id)?.name ?? "";
 export const campGrad = (id: string) => campaigns.find((c) => c.id === id)?.grad ?? "var(--grad)";
 export const initials = (s: string) => s.split(" ").map((w) => w[0]).join("").slice(0, 2);
+
+// ─────────── DONNÉES ADMIN (maquette) ───────────
+export type ClipperRow = {
+  id: string; name: string; rank: string; country: string; minor: boolean;
+  tiktok?: string; instagram?: string; youtube?: string; payout: string; payoutDetail: string;
+  vues7: number; vuesTotal: number; clips: number; gain: number; pubs7: number[];
+  recent: { asset: string; plat: string; vues: number; d7: number; st: ClipStatus }[];
+};
+
+export const clippersFull: ClipperRow[] = [
+  { id: "cl1", name: "Theo R.", rank: "Capitaine", country: "France", minor: false,
+    tiktok: "@theoclips", instagram: "@theo.r", youtube: "TheoClips", payout: "PayPal", payoutDetail: "theo@mail.com",
+    vues7: 1240000, vuesTotal: 8900000, clips: 24, gain: 980, pubs7: [3, 2, 4, 3, 5, 2, 3],
+    recent: [
+      { asset: "Pourquoi 99% échouent", plat: "TikTok", vues: 412000, d7: 88000, st: "track" },
+      { asset: "1 an pour 100k€", plat: "YouTube", vues: 208000, d7: 24000, st: "track" },
+      { asset: "Mindset du closing", plat: "Instagram", vues: 96000, d7: -2000, st: "hold" },
+    ] },
+  { id: "cl2", name: "Léa M.", rank: "Sergent", country: "Belgique", minor: false,
+    tiktok: "@leaclips", instagram: "@lea.m", payout: "PayPal", payoutDetail: "lea@mail.com",
+    vues7: 312000, vuesTotal: 1480000, clips: 9, gain: 248, pubs7: [1, 2, 1, 2, 1, 1, 2],
+    recent: [
+      { asset: "Routine matinale 5h", plat: "TikTok", vues: 184000, d7: 42000, st: "track" },
+      { asset: "Sortie Dubaï vlog", plat: "Instagram", vues: 64000, d7: 9000, st: "track" },
+    ] },
+  { id: "cl3", name: "Sofia B.", rank: "Sergent", country: "France", minor: true,
+    tiktok: "@sofiab", payout: "IBAN", payoutDetail: "FR76 ...",
+    vues7: 288000, vuesTotal: 990000, clips: 7, gain: 214, pubs7: [2, 1, 2, 2, 1, 0, 1],
+    recent: [{ asset: "La règle des 3 piliers", plat: "TikTok", vues: 142000, d7: 31000, st: "track" }] },
+  { id: "cl4", name: "Inès D.", rank: "Lieutenant", country: "Suisse", minor: false,
+    tiktok: "@inesd", instagram: "@ines.d", youtube: "InesClips", payout: "PayPal", payoutDetail: "ines@mail.com",
+    vues7: 540000, vuesTotal: 3200000, clips: 15, gain: 432, pubs7: [2, 3, 2, 4, 3, 2, 3],
+    recent: [{ asset: "1 an pour 100k€", plat: "TikTok", vues: 260000, d7: 54000, st: "track" }] },
+  { id: "cl5", name: "Nael K.", rank: "Recrue", country: "Maroc", minor: false,
+    tiktok: "@naelk", youtube: "NaelK", payout: "PayPal", payoutDetail: "nael@mail.com",
+    vues7: 64000, vuesTotal: 120000, clips: 3, gain: 51, pubs7: [1, 0, 1, 1, 0, 1, 0],
+    recent: [{ asset: "(contenu original)", plat: "TikTok", vues: 38000, d7: 12000, st: "track" }] },
+  { id: "cl6", name: "Marco T.", rank: "Recrue", country: "France", minor: false,
+    tiktok: "@marcot", payout: "Autre", payoutDetail: "—",
+    vues7: 42000, vuesTotal: 78000, clips: 2, gain: 33, pubs7: [0, 1, 0, 1, 0, 0, 1],
+    recent: [{ asset: "Routine matinale 5h", plat: "Instagram", vues: 24000, d7: 7000, st: "track" }] },
+];
+
+export const views7days = [820000, 940000, 760000, 1120000, 1340000, 980000, 1450000];
+export const dayLabels = ["L", "M", "M", "J", "V", "S", "D"];
+export const aVerserTotal = clippersFull.reduce((s, c) => s + c.gain, 0);

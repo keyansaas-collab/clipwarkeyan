@@ -22,6 +22,7 @@ export default function AppShell() {
   const [role, setRole] = useState<Role>("clip");
   const [tab, setTab] = useState("home");
   const [camp, setCamp] = useState<string | null>(null);
+  const [admClipper, setAdmClipper] = useState<string | null>(null);
   const [clips, setClips] = useState<MyClip[]>(initialClips);
   const [sheet, setSheet] = useState<React.ReactNode>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -71,7 +72,7 @@ export default function AppShell() {
   }, []);
 
   function showToast(msg: string) { setToast(msg); window.setTimeout(() => setToast(null), 2400); }
-  function go(t: string) { setTab(t); setCamp(null); window.scrollTo(0, 0); }
+  function go(t: string) { setTab(t); setCamp(null); setAdmClipper(null); window.scrollTo(0, 0); }
   function openCamp(id: string) { setTab("camp"); setCamp(id); window.scrollTo(0, 0); }
   function previewRole(r: Role) { setRole(r); setTab(r === "adm" ? "dash" : "home"); setCamp(null); window.scrollTo(0, 0); }
   async function logout() { await getSupabase().auth.signOut(); }
@@ -105,6 +106,33 @@ export default function AppShell() {
           <div className="prefill">✓ Pré-rempli avec ton dernier téléchargement — change si besoin.</div>
         </div>
         <button className="btn btn-pri" style={{ marginTop: 18, padding: 14 }} onClick={addClip}>Soumettre le clip</button>
+      </>
+    );
+  }
+  function openClipper(id: string) { setTab("clippers"); setAdmClipper(id); window.scrollTo(0, 0); }
+  function openNewChallenge() {
+    setSheet(
+      <>
+        <h3>Nouveau challenge</h3>
+        <p style={{ color: "var(--mut)", fontSize: 13 }}>Une surcouche temporaire posée sur une campagne.</p>
+        <div className="field"><label>Nom</label><input placeholder="Ex. Sprint Lifestyle 48h" /></div>
+        <div className="field"><label>Campagne</label><select>{campaigns.map((c) => <option key={c.id}>{c.name}</option>)}</select></div>
+        <div className="field"><label>Type</label><select><option>Sprint individuel</option><option>Objectif collectif</option></select></div>
+        <div className="field"><label>Durée</label><select><option>24 h</option><option>48 h</option><option>7 jours</option></select></div>
+        <div className="field"><label>Cagnotte / objectif</label><input placeholder="Ex. 400 € ou 1 000 000 vues" /></div>
+        <button className="btn btn-pri" style={{ marginTop: 18, padding: 14 }} onClick={() => { closeSheet(); showToast("Challenge créé"); }}>Créer le challenge</button>
+      </>
+    );
+  }
+  function openNewCampaign() {
+    setSheet(
+      <>
+        <h3>Nouvelle campagne</h3>
+        <p style={{ color: "var(--mut)", fontSize: 13 }}>Un axe de contenu permanent (lifestyle, coaching…).</p>
+        <div className="field"><label>Nom</label><input placeholder="Ex. Lifestyle" /></div>
+        <div className="field"><label>Description</label><input placeholder="Quotidien, voyages…" /></div>
+        <div className="field"><label>Tarif (€ / 1000 vues)</label><input placeholder="Ex. 1,2" /></div>
+        <button className="btn btn-pri" style={{ marginTop: 18, padding: 14 }} onClick={() => { closeSheet(); showToast("Campagne créée"); }}>Créer la campagne</button>
       </>
     );
   }
@@ -154,12 +182,21 @@ export default function AppShell() {
 
   // ── app connectée ──
   const clipActions: ClipActions = { go, openCamp, openSubmit, openDownload };
-  const admActions: AdmActions = { go, openImport };
+  const admActions: AdmActions = { go, openImport, openClipper, openNewChallenge, openNewCampaign, showToast };
   const adm = role === "adm";
 
   const navLinks: NavLink[] = adm
-    ? [{ id: "dash", label: "Dashboard", icon: "home" }, { id: "assets", label: "Assets", icon: "grid" }, { id: "clippers", label: "Clippers", icon: "user" }, { id: "fraud", label: "Anti-triche", icon: "alert" }]
+    ? [
+        { id: "dash", label: "Dashboard", icon: "home" },
+        { id: "clippers", label: "Clippers", icon: "user" },
+        { id: "campaigns", label: "Campagnes", icon: "folder" },
+        { id: "challenges", label: "Challenges", icon: "trophy" },
+        { id: "assets", label: "Assets", icon: "grid" },
+        { id: "fraud", label: "Anti-triche", icon: "alert" },
+        { id: "pay", label: "Paiements", icon: "wallet" },
+      ]
     : [{ id: "home", label: "Accueil", icon: "home" }, { id: "camp", label: "Campagnes", icon: "grid" }, { id: "clips", label: "Mes clips", icon: "clip" }, { id: "bilan", label: "Bilan", icon: "chart" }];
+  const mobileLinks: NavLink[] = adm ? [navLinks[0], navLinks[1], navLinks[3], navLinks[5]] : navLinks;
   const fabLabel = adm ? "Importer un asset" : "Soumettre un clip";
   const fabAction = adm ? openImport : openSubmit;
 
@@ -199,12 +236,12 @@ export default function AppShell() {
         </div>
         {role === "clip"
           ? <Clipper tab={tab} camp={camp} clips={clips} actions={clipActions} userName={profile.display_name || session.user.email} />
-          : <Admin tab={tab} actions={admActions} userName={profile.display_name || session.user.email} />}
+          : <Admin tab={tab} actions={admActions} userName={profile.display_name || session.user.email} clipperId={admClipper} />}
       </div>
 
       {/* ── nav du bas (mobile) ── */}
       <div className="nav mobile-only">
-        {navLinks.map((it, i) => (
+        {mobileLinks.map((it, i) => (
           <React.Fragment key={it.id}>
             {i === 2 && (
               <div className="nav mid" style={{ background: "none", border: "none", position: "static" }}>

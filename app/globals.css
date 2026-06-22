@@ -214,7 +214,7 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
   margin:20px 0 2px;padding-top:14px;border-top:1px solid var(--line)}
 .onb-opt{text-transform:none;letter-spacing:0;font-weight:400;color:var(--mut2)}
 
-.logo-img{height:34px;width:auto;display:block}
+.logo-img{height:34px;width:auto;max-width:100%;object-fit:contain;align-self:flex-start;display:block}
 .logo-img.big{height:46px}
 .lp-herologo{height:104px;width:auto;display:block;margin:0 auto 22px;max-width:100%}
 @media(max-width:720px){ .logo-img{height:30px} .logo-img.big{height:42px} .lp-herologo{height:68px;margin-bottom:16px} }
@@ -271,6 +271,24 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
 .lp-foot p{color:var(--mut);margin:12px auto 22px;max-width:440px;line-height:1.6}
 .lp-copy{text-align:center;color:var(--mut2);font-size:12px;padding-bottom:30px}
 .lp-org{text-align:center;color:var(--mut2);font-size:12.5px;padding:6px 0 4px}
+
+/* ===================== ADMIN ===================== */
+.adm-bars{display:flex;align-items:flex-end;gap:6px;height:60px;margin-top:10px}
+.adm-bar{flex:1;border-radius:4px 4px 0 0;min-height:6px;background:var(--grad)}
+.adm-daylabels{display:flex;gap:6px;margin-top:6px}
+.adm-daylabels span{flex:1;text-align:center;font-size:10px;color:var(--mut2)}
+.adm-chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--text);
+  background:var(--surf2);border:1px solid var(--line2);border-radius:99px;padding:6px 11px;margin:0 6px 6px 0}
+.adm-chip .h{color:var(--mut)}
+.adm-kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:9px;margin-top:12px}
+.adm-kpi{background:var(--surf);border:1px solid var(--line);border-radius:11px;padding:12px}
+.adm-kpi .v{font-family:"JetBrains Mono",monospace;font-weight:700;font-size:18px;letter-spacing:-.3px}
+.adm-kpi .v.gr{background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.adm-kpi .l{font-size:10.5px;color:var(--mut);margin-top:3px}
+@media(min-width:880px){ .adm-kpis{grid-template-columns:repeat(4,1fr)} }
+.adm-minor{font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:99px;background:rgba(255,178,62,.15);color:var(--amber)}
+.adm-major{font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:99px;background:rgba(53,230,161,.12);color:var(--mint)}
+.adm-actionbtn{width:auto;padding:9px 14px}
 
 @media(max-width:720px){
   .lp-h1{font-size:33px}
