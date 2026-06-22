@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { Hud } from "./ui";
+import { getSupabase } from "@/lib/supabase/client";
 import { fmt, euro, platLabel, agoLabel, challenges } from "@/lib/data";
 import { Catalog, AssetReal, campNameOf, campGradOf, initialsOf } from "@/lib/catalog";
 import {
@@ -143,7 +144,7 @@ function PepiteRow({ a, catalog }: { a: AdmAsset; catalog: Catalog }) {
   );
 }
 
-function Dash({ data, catalog, actions }: { data: AdminData; catalog: Catalog; actions: AdmActions }) {
+function Dash({ data, catalog, isOwner, actions }: { data: AdminData; catalog: Catalog; isOwner?: boolean; actions: AdmActions }) {
   const pepites = [...data.assets].filter((a) => a.downloads > 0).sort((a, b) => b.vues / b.downloads - a.vues / a.downloads).slice(0, 3);
   const topClippers = [...data.clippers].sort((a, b) => b.vues_7 - a.vues_7).slice(0, 3);
   const viewsData = data.views7.map((v) => v.net);
@@ -152,6 +153,13 @@ function Dash({ data, catalog, actions }: { data: AdminData; catalog: Catalog; a
 
   return (
     <>
+      {isOwner && (
+        <div className="card" style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }} onClick={() => actions.go("team")}>
+          <div className="thumb" style={{ width: 38, height: 38, background: "var(--grad)" }}>⚙</div>
+          <div style={{ flex: 1 }}><div className="t">Gérer l&apos;équipe &amp; les accès admin</div><div className="s">Ajoute ou retire des associés</div></div>
+          <span style={{ color: "var(--mut)" }}>→</span>
+        </div>
+      )}
       <div className="adm-kpis">
         <div className="adm-kpi"><div className="v gr">{data.dash.vues_7 >= 1e6 ? (Math.round(data.dash.vues_7 / 1e5) / 10) + "M" : fmt(data.dash.vues_7)}</div><div className="l">vues nettes · 7 j</div></div>
         <div className="adm-kpi"><div className="v">{euro(data.dash.a_verser)}</div><div className="l">à verser (est.)</div></div>
@@ -488,9 +496,80 @@ function PayVerify({ c, data, actions }: { c: AdmClipper; data: AdminData; actio
   );
 }
 
+/* ───────────── ÉQUIPE (réservé à l'owner) ───────────── */
+type TeamMember = { id: string; display_name: string | null; role: string; email: string };
+function Team({ actions }: { actions: AdmActions }) {
+  const [members, setMembers] = useState<TeamMember[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState("admin");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = React.useCallback(async () => {
+    setLoading(true);
+    const { data } = await getSupabase().rpc("team_list");
+    setMembers((data as TeamMember[]) || []);
+    setLoading(false);
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
+
+  async function apply(targetEmail: string, newRole: string) {
+    setBusy(true); setErr(null);
+    const { error } = await getSupabase().rpc("promote_by_email", { target_email: targetEmail, new_role: newRole });
+    setBusy(false);
+    if (error) { setErr(error.message); return; }
+    actions.showToast(newRole === "clipper" ? "Accès admin retiré" : "Associé promu " + newRole);
+    setEmail("");
+    load();
+  }
+
+  return (
+    <>
+      <div className="eyebrow" style={{ marginTop: 14 }}>Accès & rôles</div>
+      <h2 className="display" style={{ fontSize: 22, margin: "4px 0 4px" }}>Équipe</h2>
+      <p style={{ color: "var(--mut)", fontSize: 12.5, marginBottom: 12 }}>
+        Ajoute un associé en <b>admin</b> (accès complet au cockpit). Il doit s&apos;être inscrit au moins une fois avec son email.
+      </p>
+
+      <div className="card">
+        <div className="field" style={{ marginTop: 0 }}><label>Email de l&apos;associé</label>
+          <input type="email" placeholder="associe@exemple.com" value={email} onChange={(e) => setEmail(e.target.value)} /></div>
+        <div className="field"><label>Rôle</label>
+          <select value={role} onChange={(e) => setRole(e.target.value)}>
+            <option value="admin">Admin (gère le cockpit)</option>
+            <option value="clipper">Clipper (accès simple)</option>
+          </select></div>
+        <button className="btn btn-pri" style={{ marginTop: 14, padding: 13 }} disabled={busy || !email}
+          onClick={() => apply(email.trim(), role)}>{busy ? "…" : "Appliquer"}</button>
+        {err && <div className="auth-err">{err}</div>}
+      </div>
+
+      <div className="sec-h"><h2>Staff actuel</h2></div>
+      <div className="card">
+        {loading ? <div className="empty">Chargement…</div>
+          : members.length ? members.map((m) => (
+            <div className="row" key={m.id}>
+              <div className="thumb" style={{ background: m.role === "owner" ? "var(--grad-coral)" : "var(--grad)", color: m.role === "owner" ? "#0a0610" : "#fff" }}>{initialsOf(m.display_name || m.email)}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="t">{m.display_name || m.email}</div>
+                <div className="s" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.email}</div>
+              </div>
+              <div className="end" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span className={"pill " + (m.role === "owner" ? "p-paid" : "p-track")}>{m.role === "owner" ? "Propriétaire" : "Admin"}</span>
+                {m.role === "admin" && <button className="btn btn-gh" style={{ width: "auto", padding: "6px 10px", fontSize: 12 }} disabled={busy} onClick={() => apply(m.email, "clipper")}>Retirer</button>}
+              </div>
+            </div>
+          )) : <div className="empty">Aucun membre staff.</div>}
+      </div>
+      <div style={{ fontSize: 11.5, color: "var(--mut2)", marginTop: 10 }}>Après promotion, l&apos;associé doit rafraîchir l&apos;app (ou se reconnecter) pour que le cockpit s&apos;ouvre.</div>
+    </>
+  );
+}
+
 /* ───────────── RACINE ───────────── */
-export default function Admin({ tab, actions, catalog, userName, clipperId, payClipper }: {
-  tab: string; actions: AdmActions; catalog: Catalog; userName?: string | null; clipperId?: string | null; payClipper?: string | null;
+export default function Admin({ tab, actions, catalog, isOwner, userName, clipperId, payClipper }: {
+  tab: string; actions: AdmActions; catalog: Catalog; isOwner?: boolean; userName?: string | null; clipperId?: string | null; payClipper?: string | null;
 }) {
   const data = useAdminData(true);
 
@@ -498,6 +577,8 @@ export default function Admin({ tab, actions, catalog, userName, clipperId, payC
   const payTarget = payClipper ? data.clippers.find((x) => x.id === payClipper) : null;
   if (payTarget) {
     screen = <PayVerify c={payTarget} data={data} actions={actions} />;
+  } else if (tab === "team" && isOwner) {
+    screen = <Team actions={actions} />;
   } else if (tab === "clippers") {
     const c = clipperId ? data.clippers.find((x) => x.id === clipperId) : null;
     screen = c ? <ClipperDetail c={c} data={data} actions={actions} /> : <Clippers data={data} actions={actions} />;
@@ -507,7 +588,7 @@ export default function Admin({ tab, actions, catalog, userName, clipperId, payC
   else if (tab === "assets") screen = <AssetsScreen catalog={catalog} actions={actions} />;
   else if (tab === "fraud") screen = <Fraud data={data} />;
   else if (tab === "pay") screen = <Payments data={data} actions={actions} />;
-  else screen = <Dash data={data} catalog={catalog} actions={actions} />;
+  else screen = <Dash data={data} catalog={catalog} isOwner={isOwner} actions={actions} />;
 
   return (
     <>

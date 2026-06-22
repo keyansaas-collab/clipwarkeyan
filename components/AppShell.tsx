@@ -216,6 +216,7 @@ export default function AppShell() {
         { id: "assets", label: "Assets", icon: "grid" },
         { id: "fraud", label: "Anti-triche", icon: "alert" },
         { id: "pay", label: "Paiements", icon: "wallet" },
+        ...(profile?.role === "owner" ? [{ id: "team", label: "Équipe", icon: "user" }] : []),
       ]
     : [
         { id: "home", label: "Accueil", icon: "home" },
@@ -265,7 +266,7 @@ export default function AppShell() {
         </div>
         {role === "clip"
           ? <Clipper tab={tab} camp={camp} clipDetail={clipDetail} clips={clips} catalog={catalog} userName={profile.display_name || session.user.email} userEmail={session.user.email} userId={session.user.id} reloadProfile={loadProfile} actions={clipActions} />
-          : <Admin tab={tab} actions={admActions} catalog={catalog} userName={profile.display_name || session.user.email} clipperId={admClipper} payClipper={payClipper} />}
+          : <Admin tab={tab} actions={admActions} catalog={catalog} isOwner={profile?.role === "owner"} userName={profile.display_name || session.user.email} clipperId={admClipper} payClipper={payClipper} />}
       </div>
 
       {/* ── nav du bas (mobile) ── */}
