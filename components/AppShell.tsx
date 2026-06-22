@@ -4,12 +4,20 @@ import React, { useEffect, useState } from "react";
 import { Icon } from "./ui";
 import Clipper, { ClipActions } from "./Clipper";
 import Admin, { AdmActions } from "./Admin";
+import Login from "./Login";
+import { getSupabase } from "@/lib/supabase/client";
 import { assets, campaigns, initialClips, MyClip } from "@/lib/data";
 
 type Role = "clip" | "adm";
 type NavLink = { id: string; label: string; icon: string };
+type Profile = { display_name: string | null; role: string; rank: string | null };
 
 export default function AppShell() {
+  // ── auth ──
+  const [session, setSession] = useState<any>(undefined); // undefined = chargement
+  const [profile, setProfile] = useState<Profile | null>(null);
+
+  // ── app ──
   const [role, setRole] = useState<Role>("clip");
   const [tab, setTab] = useState("home");
   const [camp, setCamp] = useState<string | null>(null);
@@ -17,6 +25,36 @@ export default function AppShell() {
   const [sheet, setSheet] = useState<React.ReactNode>(null);
   const [toast, setToast] = useState<string | null>(null);
 
+  // récupère la session + écoute les changements (login / logout)
+  useEffect(() => {
+    const sb = getSupabase();
+    sb.auth.getSession().then(({ data }) => setSession(data.session ?? null));
+    const { data: sub } = sb.auth.onAuthStateChange((_e, s) => setSession(s ?? null));
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  // charge le profil (donc le rôle réel) une fois connecté
+  useEffect(() => {
+    if (!session) { setProfile(null); return; }
+    getSupabase()
+      .from("profiles")
+      .select("display_name, role, rank")
+      .eq("id", session.user.id)
+      .maybeSingle()
+      .then(({ data }) => setProfile((data as Profile) ?? { display_name: null, role: "clipper", rank: null }));
+  }, [session]);
+
+  const isStaff = profile?.role === "admin" || profile?.role === "owner";
+
+  // l'espace par défaut suit le rôle réel
+  useEffect(() => {
+    if (!profile) return;
+    setRole(isStaff ? "adm" : "clip");
+    setTab(isStaff ? "dash" : "home");
+    setCamp(null);
+  }, [profile?.role]);
+
+  // compteurs de vues en direct
   useEffect(() => {
     if (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion:reduce)").matches) return;
     const id = setInterval(() => {
@@ -29,13 +67,11 @@ export default function AppShell() {
     return () => clearInterval(id);
   }, []);
 
-  function showToast(msg: string) {
-    setToast(msg);
-    window.setTimeout(() => setToast(null), 2400);
-  }
+  function showToast(msg: string) { setToast(msg); window.setTimeout(() => setToast(null), 2400); }
   function go(t: string) { setTab(t); setCamp(null); window.scrollTo(0, 0); }
   function openCamp(id: string) { setTab("camp"); setCamp(id); window.scrollTo(0, 0); }
-  function switchRole(r: Role) { setRole(r); setTab(r === "adm" ? "dash" : "home"); setCamp(null); window.scrollTo(0, 0); }
+  function previewRole(r: Role) { setRole(r); setTab(r === "adm" ? "dash" : "home"); setCamp(null); window.scrollTo(0, 0); }
+  async function logout() { await getSupabase().auth.signOut(); }
   const closeSheet = () => setSheet(null);
 
   function openDownload(name: string) {
@@ -86,6 +122,20 @@ export default function AppShell() {
     closeSheet(); showToast("Clip ajouté · suivi des vues lancé"); go("clips");
   }
 
+  // ── gating auth ──
+  if (session === undefined) {
+    return (
+      <div className="shell">
+        <div className="auth-wrap">
+          <div className="brand" style={{ justifyContent: "center" }}>ClipWar <span>War Room</span></div>
+          <div className="auth-sub" style={{ marginTop: 12 }}>Chargement…</div>
+        </div>
+      </div>
+    );
+  }
+  if (!session) return <Login />;
+
+  // ── app connectée ──
   const clipActions: ClipActions = { go, openCamp, openSubmit, openDownload };
   const admActions: AdmActions = { go, openImport };
   const adm = role === "adm";
@@ -96,10 +146,11 @@ export default function AppShell() {
   const fabLabel = adm ? "Importer un asset" : "Soumettre un clip";
   const fabAction = adm ? openImport : openSubmit;
 
-  const RoleSwitch = () => (
+  // sélecteur d'aperçu : visible uniquement pour le staff
+  const PreviewSwitch = () => (
     <div className="role">
-      <button className={role === "clip" ? "on" : ""} onClick={() => switchRole("clip")}>Clipper</button>
-      <button className={role === "adm" ? "on adm" : ""} onClick={() => switchRole("adm")}>Keyan · Admin</button>
+      <button className={role === "clip" ? "on" : ""} onClick={() => previewRole("clip")}>Vue clipper</button>
+      <button className={role === "adm" ? "on adm" : ""} onClick={() => previewRole("adm")}>Vue admin</button>
     </div>
   );
 
@@ -108,7 +159,7 @@ export default function AppShell() {
       {/* ── barre latérale (desktop) ── */}
       <aside className="side">
         <div className="brand">ClipWar <span>War Room</span></div>
-        <RoleSwitch />
+        {isStaff && <PreviewSwitch />}
         <button className="btn btn-pri side-action" onClick={fabAction}>+ {fabLabel}</button>
         <nav className="side-nav">
           {navLinks.map((it) => (
@@ -117,13 +168,17 @@ export default function AppShell() {
             </a>
           ))}
         </nav>
+        <div className="side-foot">
+          <div className="side-user">{profile?.display_name || session.user.email}</div>
+          <button className="logout" onClick={logout}>Se déconnecter</button>
+        </div>
       </aside>
 
       {/* ── contenu ── */}
       <div className="main">
-        <div className="role mobile-only">
-          <button className={role === "clip" ? "on" : ""} onClick={() => switchRole("clip")}>Clipper</button>
-          <button className={role === "adm" ? "on adm" : ""} onClick={() => switchRole("adm")}>Keyan · Admin</button>
+        <div className="mobtop mobile-only">
+          {isStaff ? <PreviewSwitch /> : <div style={{ flex: 1, fontSize: 12, color: "var(--mut)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{profile?.display_name || session.user.email}</div>}
+          <button className="logout" onClick={logout}>Quitter</button>
         </div>
         {role === "clip"
           ? <Clipper tab={tab} camp={camp} clips={clips} actions={clipActions} />

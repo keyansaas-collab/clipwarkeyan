@@ -35,7 +35,8 @@ function deepFindNumber(obj: any, keys: string[]): number | null {
 }
 
 export async function getTiktokViews(url: string): Promise<number | null> {
-  const data = await call("/v1/tiktok/video", url);
+  // l'endpoint vidéo est en v2 ; on garde v1 en repli au cas où
+  const data = (await call("/v2/tiktok/video", url)) ?? (await call("/v1/tiktok/video", url));
   if (!data) return null;
   return deepFindNumber(data, ["play_count", "playCount", "view_count", "viewCount"]);
 }

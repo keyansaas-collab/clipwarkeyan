@@ -1,10 +1,15 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-// Client NAVIGATEUR avec la clé publique (anon / publishable).
-// Sûr à exposer côté front : la RLS protège les données.
-export function supabaseBrowser() {
-  return createClient(
+// Client NAVIGATEUR (clé publique anon). Singleton + gestion de session
+// pour l'auth (lien magique + Google). La RLS protège les données.
+let _client: SupabaseClient | null = null;
+
+export function getSupabase(): SupabaseClient {
+  if (_client) return _client;
+  _client = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } }
   );
+  return _client;
 }
