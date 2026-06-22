@@ -24,6 +24,8 @@ export default function AppShell() {
   const [tab, setTab] = useState("home");
   const [camp, setCamp] = useState<string | null>(null);
   const [admClipper, setAdmClipper] = useState<string | null>(null);
+  const [payClipper, setPayClipper] = useState<string | null>(null);
+  const [clipDetail, setClipDetail] = useState<string | null>(null);
   const [clips, setClips] = useState<MyClip[]>([]);
   const [sheet, setSheet] = useState<React.ReactNode>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -65,7 +67,7 @@ export default function AppShell() {
     const sb = getSupabase();
     const { data: rows } = await sb
       .from("clips")
-      .select("id, platform, url, status, asset_id, assets(title)")
+      .select("id, platform, url, status, asset_id, submitted_at, assets(title)")
       .eq("clipper_id", session.user.id)
       .order("submitted_at", { ascending: false });
     const ids = (rows || []).map((r: any) => r.id);
@@ -85,7 +87,8 @@ export default function AppShell() {
       const base = s.find((x) => new Date(x.captured_at).getTime() <= weekAgo);
       const net = Math.max(0, cur - (base ? base.views : 0));
       const a = Array.isArray(r.assets) ? r.assets[0] : r.assets;
-      return { id: r.id, asset: a?.title || "(contenu original)", plat: platLabel[r.platform] || r.platform, vues: cur, d7: net, st: (r.status === "rejected" ? "hold" : r.status) };
+      const ago = r.submitted_at ? Math.floor((Date.now() - new Date(r.submitted_at).getTime()) / 864e5) : 0;
+      return { id: r.id, asset: a?.title || "(contenu original)", plat: platLabel[r.platform] || r.platform, vues: cur, d7: net, st: (r.status === "rejected" ? "hold" : r.status), url: r.url, ago };
     });
     setClips(mapped);
   }, [session]);
@@ -93,8 +96,9 @@ export default function AppShell() {
   useEffect(() => { loadClips(); }, [loadClips]);
 
   function showToast(msg: string) { setToast(msg); window.setTimeout(() => setToast(null), 2400); }
-  function go(t: string) { setTab(t); setCamp(null); setAdmClipper(null); window.scrollTo(0, 0); }
+  function go(t: string) { setTab(t); setCamp(null); setAdmClipper(null); setPayClipper(null); setClipDetail(null); window.scrollTo(0, 0); }
   function openCamp(id: string) { setTab("camp"); setCamp(id); window.scrollTo(0, 0); }
+  function openClip(id: string) { setTab("clips"); setClipDetail(id); window.scrollTo(0, 0); }
   function previewRole(r: Role) { setRole(r); setTab(r === "adm" ? "dash" : "home"); setCamp(null); window.scrollTo(0, 0); }
   async function logout() { await getSupabase().auth.signOut(); }
   const closeSheet = () => setSheet(null);
@@ -115,6 +119,7 @@ export default function AppShell() {
     setSheet(<SubmitSheet clipperId={session.user.id} onDone={() => { closeSheet(); showToast("Clip soumis · suivi lancé"); loadClips(); go("clips"); }} />);
   }
   function openClipper(id: string) { setTab("clippers"); setAdmClipper(id); window.scrollTo(0, 0); }
+  function openPayVerify(id: string) { setPayClipper(id); window.scrollTo(0, 0); }
   function openNewChallenge() {
     setSheet(
       <>
@@ -149,6 +154,8 @@ export default function AppShell() {
         <div className="field"><label>Titre</label><input placeholder="Ex. Routine du matin" /></div>
         <div className="field"><label>Campagne</label><select>{campaigns.map((c) => <option key={c.id}>{c.name}</option>)}</select></div>
         <div className="field"><label>Source</label><select><option>Lien Google Drive (catalogue)</option><option>Upload vers Cloudflare R2</option></select></div>
+        <div className="field"><label>Lien de la vidéo source</label><input placeholder="Colle ton lien Google Drive (ou R2)" /></div>
+        <div className="field"><label>Durée (optionnel)</label><input placeholder="Ex. 1:32" /></div>
         <button className="btn btn-pri" style={{ marginTop: 18, padding: 14 }} onClick={() => { closeSheet(); showToast("Asset ajouté au catalogue"); }}>Ajouter au catalogue</button>
       </>
     );
@@ -182,8 +189,8 @@ export default function AppShell() {
   }
 
   // ── app connectée ──
-  const clipActions: ClipActions = { go, openCamp, openSubmit, openDownload };
-  const admActions: AdmActions = { go, openImport, openClipper, openNewChallenge, openNewCampaign, showToast };
+  const clipActions: ClipActions = { go, openCamp, openSubmit, openDownload, openClip, showToast };
+  const admActions: AdmActions = { go, openImport, openClipper, openNewChallenge, openNewCampaign, openPayVerify, showToast };
   const adm = role === "adm";
 
   const navLinks: NavLink[] = adm
@@ -197,8 +204,15 @@ export default function AppShell() {
         { id: "fraud", label: "Anti-triche", icon: "alert" },
         { id: "pay", label: "Paiements", icon: "wallet" },
       ]
-    : [{ id: "home", label: "Accueil", icon: "home" }, { id: "camp", label: "Campagnes", icon: "grid" }, { id: "clips", label: "Mes clips", icon: "clip" }, { id: "bilan", label: "Bilan", icon: "chart" }];
-  const mobileLinks: NavLink[] = adm ? [navLinks[0], navLinks[1], navLinks[2], navLinks[7]] : navLinks;
+    : [
+        { id: "home", label: "Accueil", icon: "home" },
+        { id: "camp", label: "Campagnes", icon: "folder" },
+        { id: "clips", label: "Mes clips", icon: "clip" },
+        { id: "bilan", label: "Bilan", icon: "chart" },
+        { id: "classement", label: "Classement", icon: "trophy" },
+        { id: "profil", label: "Profil", icon: "user" },
+      ];
+  const mobileLinks: NavLink[] = adm ? [navLinks[0], navLinks[1], navLinks[2], navLinks[7]] : navLinks.slice(0, 4);
   const fabLabel = adm ? "Importer un asset" : "Soumettre un clip";
   const fabAction = adm ? openImport : openSubmit;
 
@@ -237,8 +251,8 @@ export default function AppShell() {
           <button className="logout" onClick={logout}>Quitter</button>
         </div>
         {role === "clip"
-          ? <Clipper tab={tab} camp={camp} clips={clips} actions={clipActions} userName={profile.display_name || session.user.email} />
-          : <Admin tab={tab} actions={admActions} userName={profile.display_name || session.user.email} clipperId={admClipper} />}
+          ? <Clipper tab={tab} camp={camp} clipDetail={clipDetail} clips={clips} userName={profile.display_name || session.user.email} userEmail={session.user.email} userId={session.user.id} reloadProfile={loadProfile} actions={clipActions} />
+          : <Admin tab={tab} actions={admActions} userName={profile.display_name || session.user.email} clipperId={admClipper} payClipper={payClipper} />}
       </div>
 
       {/* ── nav du bas (mobile) ── */}

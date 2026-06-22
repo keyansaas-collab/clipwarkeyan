@@ -1,8 +1,11 @@
-import React from "react";
-import { Hud } from "./ui";
+"use client";
+
+import React, { useEffect, useState } from "react";
+import { Icon } from "./ui";
+import { getSupabase } from "@/lib/supabase/client";
 import {
-  campaigns, assets, challenges, campName, campGrad, initials,
-  fmt, euro, MyClip,
+  campaigns, assets, challenges, clippersFull, platLabel,
+  fmt, euro, campGrad, initials, MyClip,
 } from "@/lib/data";
 
 export type ClipActions = {
@@ -10,51 +13,68 @@ export type ClipActions = {
   openCamp: (id: string) => void;
   openSubmit: () => void;
   openDownload: (name: string) => void;
+  openClip: (id: string) => void;
+  showToast: (m: string) => void;
 };
 
-function deltaClass(d: number) { return d > 0 ? "up" : d < 0 ? "down" : "flat"; }
-function deltaText(d: number) { return (d > 0 ? "+" : "") + fmt(d); }
+const RATE = 1.0; // € / 1000 vues (estimation tant que la campagne n'est pas liée)
+const SEUIL = 50; // seuil de paiement
+function dcl(d: number) { return d > 0 ? "up" : d < 0 ? "down" : "flat"; }
+function dtx(d: number) { return (d > 0 ? "+" : "") + fmt(d); }
 
-function ClipRow({ c }: { c: MyClip }) {
+function rankInfo(total: number) {
+  const tiers: [string, number][] = [["Recrue", 0], ["Sergent", 100000], ["Lieutenant", 500000], ["Capitaine", 2000000], ["Général", 10000000]];
+  let idx = 0;
+  tiers.forEach((t, i) => { if (total >= t[1]) idx = i; });
+  const next = tiers[idx + 1] || null;
+  return { rank: tiers[idx][0], base: tiers[idx][1], level: Math.max(1, Math.floor(total / 100000) + 1), next: next ? { label: next[0], at: next[1] } : null };
+}
+function agoTxt(d?: number) { return d == null ? "" : d === 0 ? "aujourd'hui" : d === 1 ? "hier" : `il y a ${d} j`; }
+
+/* ---------- petite ligne de clip ---------- */
+function MineRow({ c, onClick }: { c: MyClip; onClick: () => void }) {
+  const pill = { track: ["p-track", "En suivi"], paid: ["p-paid", "Payé"], hold: ["p-hold", "Gelé"] }[c.st];
   return (
-    <div className="row">
+    <div className="row" style={{ cursor: "pointer" }} onClick={onClick}>
       <div className="thumb" style={{ background: "var(--surf2)", color: "var(--mut)" }}>{c.plat[0]}</div>
-      <div><div className="t">{c.asset}</div><div className="s">{c.plat}</div></div>
-      <div className="end">
-        <div className="vue">{fmt(c.vues)}</div>
-        <div className={"delta " + deltaClass(c.d7)}>{deltaText(c.d7)} · 7 j</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="t" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.asset}</div>
+        <div className="s">{c.plat} · {agoTxt(c.ago)} <span className={"pill " + pill[0]} style={{ marginLeft: 4 }}>{pill[1]}</span></div>
       </div>
+      <div className="end"><div className="vue">{fmt(c.vues)}</div><div className={"delta " + dcl(c.d7)}>{dtx(c.d7)} · 7 j</div></div>
     </div>
   );
 }
 
-function AssetCard({ a, onDownload }: { a: typeof assets[number]; onDownload: () => void }) {
-  return (
-    <div className="asset">
-      <div className="cov" style={{ background: campGrad(a.camp) }}>
-        <div className="play">▶</div><div className="dur">{a.dur}</div>
-      </div>
-      <div className="b">
-        <div className="ti">{a.t}</div>
-        <div className="mt">↓ {fmt(a.dl)} · {a.clips} clips</div>
-        <button className="btn btn-pri" onClick={onDownload}>Télécharger</button>
-      </div>
-    </div>
-  );
-}
-
-function Home({ clips, actions }: { clips: MyClip[]; actions: ClipActions }) {
+/* ====================== ACCUEIL ====================== */
+function Home({ clips, name, place, actions }: { clips: MyClip[]; name: string; place: number; actions: ClipActions }) {
   const vues7 = clips.reduce((s, c) => s + Math.max(0, c.d7), 0);
+  const gain = (vues7 / 1000) * RATE;
+  const total = clips.reduce((s, c) => s + c.vues, 0);
+  const r = rankInfo(total);
+  const prog = r.next ? Math.min(100, ((total - r.base) / (r.next.at - r.base)) * 100) : 100;
   const feu = [...clips].filter((c) => c.d7 > 0).sort((a, b) => b.d7 - a.d7).slice(0, 3);
+
   return (
     <>
-      <div className="stats">
-        <div className="stat"><div className="v gr mono">{fmt(Math.round(vues7 / 1000))}k</div><div className="l">vues · 7 j</div></div>
-        <div className="stat"><div className="v mono">248 €</div><div className="l">gain du mois</div></div>
-        <div className="stat"><div className="v mono">{clips.length}</div><div className="l">clips en suivi</div></div>
+      <div className="card" style={{ background: "linear-gradient(150deg,rgba(139,108,255,.2),rgba(45,226,230,.06)),var(--surf)", borderColor: "var(--line2)" }}>
+        <div style={{ fontSize: 12, color: "var(--mut)", fontWeight: 600 }}>Cette semaine</div>
+        <div className="display" style={{ fontSize: 38, fontWeight: 700, margin: "4px 0", letterSpacing: "-1px" }}>{euro(gain)}</div>
+        <div style={{ fontSize: 12.5, color: "var(--mut)" }}>{fmt(vues7)} vues nettes · {clips.length} clips</div>
+        <div className="meter"><i style={{ width: Math.min(100, (gain / SEUIL) * 100) + "%" }} /></div>
+        <div style={{ fontSize: 11.5, color: "var(--mut)", marginTop: 7 }}>Seuil de paiement : {SEUIL} € {gain >= SEUIL ? "— atteint ✓" : `· encore ${euro(SEUIL - gain)}`}</div>
       </div>
 
-      <div className="sec-h"><h2>Challenges en cours</h2><span className="more" onClick={() => actions.go("camp")}>Voir tout</span></div>
+      <div className="sec-h"><h2>Ta progression</h2></div>
+      <div className="card">
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 600 }}>
+          <span>{r.rank} · Niveau {r.level}</span>{r.next && <span style={{ color: "var(--mut)" }}>{r.next.label}</span>}
+        </div>
+        <div className="bar" style={{ background: "var(--bg2)" }}><i style={{ width: prog + "%" }} /></div>
+        {r.next && <div style={{ fontSize: 12, color: "var(--mut)", marginTop: 8 }}>Encore <b style={{ color: "var(--text)" }}>{fmt(r.next.at - total)}</b> vues pour passer {r.next.label}.</div>}
+      </div>
+
+      <div className="sec-h"><h2>Challenges à rejoindre</h2><span className="more" onClick={() => actions.go("camp")}>Campagnes</span></div>
       <div className="rail">
         {challenges.map((c, i) => (
           <div className={"chal " + c.c} key={i}>
@@ -68,21 +88,23 @@ function Home({ clips, actions }: { clips: MyClip[]; actions: ClipActions }) {
       </div>
 
       <div className="sec-h"><h2>Tes clips en feu</h2><span className="more" onClick={() => actions.go("clips")}>Mes clips</span></div>
-      <div className="card">{feu.map((c) => <ClipRow c={c} key={c.id} />)}</div>
+      <div className="card">
+        {feu.length ? feu.map((c) => <MineRow key={c.id} c={c} onClick={() => actions.openClip(c.id)} />)
+          : <div className="empty">Aucun clip pour l&apos;instant. Soumets ton premier clip avec le bouton +.</div>}
+      </div>
 
-      <div className="sec-h"><h2>Reprendre où tu en étais</h2></div>
-      <div className="card" style={{ display: "flex", alignItems: "center", gap: 13 }}>
-        <div className="thumb" style={{ background: campGrad("biz") }}>BP</div>
-        <div>
-          <div style={{ fontWeight: 600, fontSize: 14 }}>Le Business Paie</div>
-          <div style={{ fontSize: 12, color: "var(--mut)" }}>21 assets · 1,5 € / 1000 vues</div>
-        </div>
-        <button className="btn btn-pri" style={{ width: "auto", padding: "9px 14px", marginLeft: "auto" }} onClick={() => actions.openCamp("biz")}>Ouvrir</button>
+      <div className="sec-h"><h2>Classement</h2><span className="more" onClick={() => actions.go("classement")}>Voir tout</span></div>
+      <div className="card" style={{ display: "flex", alignItems: "center", gap: 13, cursor: "pointer" }} onClick={() => actions.go("classement")}>
+        <div className="thumb" style={{ background: "var(--grad-coral)", color: "#0a0610" }}>#{place}</div>
+        <div style={{ flex: 1 }}><div style={{ fontWeight: 600, fontSize: 14 }}>Tu es {place}ᵉ cette semaine</div>
+          <div style={{ fontSize: 12, color: "var(--mut)" }}>{fmt(vues7)} vues nettes · monte dans le classement</div></div>
+        <Icon name="trophy" />
       </div>
     </>
   );
 }
 
+/* ====================== CAMPAGNES ====================== */
 function Campaigns({ camp, actions }: { camp: string | null; actions: ClipActions }) {
   if (camp) {
     const c = campaigns.find((x) => x.id === camp)!;
@@ -91,69 +113,111 @@ function Campaigns({ camp, actions }: { camp: string | null; actions: ClipAction
       <>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
           <button className="btn btn-gh" style={{ width: "auto", padding: "8px 12px" }} onClick={() => actions.go("camp")}>← Retour</button>
-          <div>
-            <div style={{ fontWeight: 600, fontSize: 15 }}>{c.name}</div>
-            <div style={{ fontSize: 12, color: "var(--mut)" }}>{String(c.rate).replace(".", ",")} € / 1000 vues</div>
-          </div>
+          <div><div style={{ fontWeight: 600, fontSize: 15 }}>{c.name}</div>
+            <div style={{ fontSize: 12, color: "var(--mut)" }}>{String(c.rate).replace(".", ",")} € / 1000 vues</div></div>
         </div>
         <div className="grid">
-          {list.map((a) => <AssetCard a={a} key={a.id} onDownload={() => actions.openDownload(a.t)} />)}
+          {list.map((a) => (
+            <div className="asset" key={a.id}>
+              <div className="cov" style={{ background: campGrad(a.camp) }}><div className="play">▶</div><div className="dur">{a.dur}</div></div>
+              <div className="b"><div className="ti">{a.t}</div><div className="mt">↓ {fmt(a.dl)} · {a.clips} clips</div>
+                <button className="btn btn-pri" onClick={() => actions.openDownload(a.t)}>Télécharger</button></div>
+            </div>
+          ))}
         </div>
       </>
     );
   }
   return (
     <>
-      <div className="eyebrow" style={{ marginTop: 14 }}>Campagnes de Keyan</div>
+      <div className="eyebrow" style={{ marginTop: 14 }}>Campagnes</div>
       <h2 className="display" style={{ fontSize: 22, margin: "4px 0 4px" }}>Choisis ton terrain</h2>
-      <p style={{ color: "var(--mut)", fontSize: 13, marginBottom: 6 }}>Chaque campagne = ses assets et son tarif aux vues.</p>
+      <p style={{ color: "var(--mut)", fontSize: 13, marginBottom: 6 }}>Chaque campagne = ses contenus et son tarif aux vues.</p>
       {campaigns.map((c) => (
         <div className="card" key={c.id} style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 14, cursor: "pointer" }} onClick={() => actions.openCamp(c.id)}>
           <div className="thumb" style={{ width: 54, height: 54, background: c.grad }}>{initials(c.name)}</div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 600, fontSize: 15 }}>{c.name}</div>
+          <div style={{ flex: 1 }}><div style={{ fontWeight: 600, fontSize: 15 }}>{c.name}</div>
             <div style={{ fontSize: 12, color: "var(--mut)", marginTop: 2 }}>{c.desc}</div>
-            <div style={{ marginTop: 7 }}>
-              <span className={"tag " + c.tag}>{c.assets} assets</span>
-              <span className={"tag " + c.tag}>{String(c.rate).replace(".", ",")} € / 1000 vues</span>
-            </div>
-          </div>
+            <div style={{ marginTop: 7 }}><span className={"tag " + c.tag}>{c.assets} contenus</span><span className={"tag " + c.tag}>{String(c.rate).replace(".", ",")} € / 1000 vues</span></div></div>
         </div>
       ))}
     </>
   );
 }
 
-function MineRow({ c }: { c: MyClip }) {
-  const pill = { track: ["p-track", "En suivi"], paid: ["p-paid", "Payé"], hold: ["p-hold", "Gelé"] }[c.st];
-  return (
-    <div className="row">
-      <div className="thumb" style={{ background: "var(--surf2)", color: "var(--mut)" }}>{c.plat[0]}</div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div className="t" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.asset}</div>
-        <div className="s">{c.plat} · <span className={deltaClass(c.d7)}>{deltaText(c.d7)} · 7 j</span></div>
-      </div>
-      <div className="end">
-        <div className="vue">{fmt(c.vues)}</div>
-        <span className={"pill " + pill[0]} style={{ marginTop: 4, display: "inline-block" }}>{pill[1]}</span>
-      </div>
-    </div>
-  );
-}
-
-function Mine({ clips }: { clips: MyClip[] }) {
+/* ====================== MES CLIPS ====================== */
+function Mine({ clips, actions }: { clips: MyClip[]; actions: ClipActions }) {
+  const [f, setF] = useState("all");
+  const list = f === "all" ? clips : clips.filter((c) => c.st === f);
   return (
     <>
       <div className="eyebrow" style={{ marginTop: 14 }}>Suivi en direct</div>
-      <h2 className="display" style={{ fontSize: 22, margin: "4px 0 12px" }}>Mes clips</h2>
-      <div className="card">{clips.map((c) => <MineRow c={c} key={c.id} />)}</div>
+      <h2 className="display" style={{ fontSize: 22, margin: "4px 0 8px" }}>Mes clips</h2>
+      <div className="adm-filters">
+        <select value={f} onChange={(e) => setF(e.target.value)}>
+          <option value="all">Tous</option><option value="track">En suivi</option><option value="paid">Payés</option><option value="hold">Gelés</option>
+        </select>
+      </div>
+      <div className="card">
+        {list.length ? list.map((c) => <MineRow key={c.id} c={c} onClick={() => actions.openClip(c.id)} />)
+          : <div className="empty">Aucun clip ici. Soumets-en un avec le bouton +.</div>}
+      </div>
     </>
   );
 }
 
+/* ====================== FICHE CLIP ====================== */
+function ClipDetail({ clip, actions }: { clip: MyClip; actions: ClipActions }) {
+  const [snaps, setSnaps] = useState<{ views: number; captured_at: string }[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    getSupabase().from("view_snapshots").select("views, captured_at").eq("clip_id", clip.id).order("captured_at", { ascending: true })
+      .then(({ data }) => { setSnaps(data || []); setLoaded(true); });
+  }, [clip.id]);
+  const pill = { track: ["p-track", "En suivi"], paid: ["p-paid", "Payé"], hold: ["p-hold", "Gelé"] }[clip.st];
+  const gain = (Math.max(0, clip.d7) / 1000) * RATE;
+  const max = Math.max(...snaps.map((s) => s.views), 1);
+
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
+        <button className="btn btn-gh" style={{ width: "auto", padding: "8px 12px" }} onClick={() => actions.go("clips")}>← Mes clips</button>
+      </div>
+      <div className="card" style={{ marginTop: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div className="thumb" style={{ width: 46, height: 46, background: "var(--surf2)", color: "var(--mut)" }}>{clip.plat[0]}</div>
+          <div style={{ flex: 1, minWidth: 0 }}><div className="t">{clip.asset}</div><div className="s">{clip.plat} · {agoTxt(clip.ago)}</div></div>
+          <span className={"pill " + pill[0]}>{pill[1]}</span>
+        </div>
+      </div>
+      <div className="adm-kpis">
+        <div className="adm-kpi"><div className="v gr">{fmt(clip.vues)}</div><div className="l">vues actuelles</div></div>
+        <div className="adm-kpi"><div className="v">{dtx(clip.d7)}</div><div className="l">net · 7 j</div></div>
+        <div className="adm-kpi"><div className="v">{euro(gain)}</div><div className="l">gain estimé</div></div>
+      </div>
+
+      <div className="sec-h"><h2>Évolution des vues</h2></div>
+      <div className="card">
+        {snaps.length >= 2 ? (
+          <div className="adm-bars" style={{ height: 80 }}>{snaps.map((s, i) => <div key={i} className="adm-bar" style={{ height: Math.max(6, (s.views / max) * 100) + "%" }} title={fmt(s.views)} />)}</div>
+        ) : (
+          <div className="empty" style={{ padding: "22px 10px" }}>{loaded ? "Pas encore assez de relevés. Le cron mesure tes vues plusieurs fois par jour — reviens bientôt." : "Chargement…"}</div>
+        )}
+      </div>
+
+      {clip.st === "hold" && (
+        <div className="alert" style={{ marginTop: 12 }}><div className="ic">!</div><div><div className="at">Clip gelé</div><div className="as">Les vues ont baissé (purge de bots probable). Le paiement est suspendu le temps que ça se stabilise.</div></div></div>
+      )}
+
+      {clip.url && <a className="btn btn-pri" style={{ marginTop: 14, padding: 13, textDecoration: "none" }} href={clip.url} target="_blank" rel="noopener noreferrer">Ouvrir la vidéo ↗</a>}
+    </>
+  );
+}
+
+/* ====================== BILAN ====================== */
 function Bilan({ clips }: { clips: MyClip[] }) {
   const net = clips.filter((c) => c.st !== "hold").reduce((s, c) => s + Math.max(0, c.d7), 0);
-  const gain = (net / 1000) * 1.2;
+  const gain = (net / 1000) * RATE;
   return (
     <>
       <div className="eyebrow" style={{ marginTop: 14 }}>Fenêtre 7 jours glissants</div>
@@ -162,36 +226,135 @@ function Bilan({ clips }: { clips: MyClip[] }) {
         <div style={{ fontSize: 12, color: "var(--mut)", fontWeight: 600 }}>Gain estimé · vues nettes nouvelles</div>
         <div className="display" style={{ fontSize: 40, fontWeight: 700, margin: "6px 0", letterSpacing: "-1px" }}>{euro(gain)}</div>
         <div style={{ fontSize: 12.5, color: "var(--mut)" }}>{fmt(net)} vues nettes comptées cette fenêtre</div>
-        <div className="meter"><i style={{ width: "72%", background: "var(--mint)" }} /></div>
-        <div style={{ fontSize: 11.5, color: "var(--mut)", marginTop: 8 }}>Seuil de paiement : 50 € — atteint ✓</div>
+        <div className="meter"><i style={{ width: Math.min(100, (gain / SEUIL) * 100) + "%", background: "var(--mint)" }} /></div>
+        <div style={{ fontSize: 11.5, color: "var(--mut)", marginTop: 8 }}>Seuil de paiement : {SEUIL} € {gain >= SEUIL ? "— atteint ✓" : `· encore ${euro(SEUIL - gain)}`}</div>
       </div>
       <div className="sec-h"><h2>Comment c&apos;est calculé</h2></div>
       <div className="card" style={{ fontSize: 13, color: "var(--mut)", lineHeight: 1.7 }}>
-        On relève les vues de chaque clip plusieurs fois par jour. On ne paie que les{" "}
-        <b style={{ color: "var(--text)" }}>vues nettes nouvelles</b> de la fenêtre — pas le total. Un clip qui pète à J+15 paie ce jour-là. Un clip dont les vues chutent passe en <span className="pill p-hold">Gelé</span> le temps de vérifier.
+        On relève tes vues plusieurs fois par jour. On ne paie que les <b style={{ color: "var(--text)" }}>vues nettes nouvelles</b> de la fenêtre — pas le total. Un clip qui pète à J+15 te paie ce jour-là. Un clip dont les vues chutent passe en <span className="pill p-hold">Gelé</span> le temps de vérifier.
       </div>
-      <div className="sec-h"><h2>Derniers paiements</h2></div>
+      <div className="sec-h"><h2>Historique des paiements</h2></div>
+      <div className="card"><div className="empty">Aucun versement pour l&apos;instant. Dès que tu passes le seuil, tes paiements apparaîtront ici.</div></div>
+    </>
+  );
+}
+
+/* ====================== CLASSEMENT ====================== */
+function Classement({ name, vues7 }: { name: string; vues7: number }) {
+  const me = { id: "me", name: name + " (toi)", vues: vues7, me: true };
+  const others = clippersFull.map((c) => ({ id: c.id, name: c.name, vues: c.vues7, me: false }));
+  const board = [...others, me].sort((a, b) => b.vues - a.vues);
+  return (
+    <>
+      <div className="eyebrow" style={{ marginTop: 14 }}>Cette semaine</div>
+      <h2 className="display" style={{ fontSize: 22, margin: "4px 0 12px" }}>Classement</h2>
       <div className="card">
-        {[["09 juin", "142 €"], ["02 juin", "98 €"], ["26 mai", "176 €"]].map((p, i) => (
-          <div className="row" key={i}><div className="t">{p[0]}</div><div className="end vue" style={{ color: "var(--mint)" }}>{p[1]}</div></div>
+        {board.map((c, i) => (
+          <div className="row" key={c.id} style={c.me ? { background: "rgba(139,108,255,.08)", borderRadius: 10 } : {}}>
+            <div className="thumb" style={{ background: i === 0 ? "var(--grad-coral)" : "var(--surf2)", color: i === 0 ? "#0a0610" : "var(--mut)" }}>{i + 1}</div>
+            <div style={{ flex: 1 }}><div className="t">{c.name}</div></div>
+            <div className="vue mono">{fmt(c.vues)}</div>
+          </div>
         ))}
       </div>
     </>
   );
 }
 
-export default function Clipper({ tab, camp, clips, actions, userName }: {
-  tab: string; camp: string | null; clips: MyClip[]; actions: ClipActions; userName?: string | null;
-}) {
-  let screen: React.ReactNode;
-  if (tab === "camp") screen = <Campaigns camp={camp} actions={actions} />;
-  else if (tab === "clips") screen = <Mine clips={clips} />;
-  else if (tab === "bilan") screen = <Bilan clips={clips} />;
-  else screen = <Home clips={clips} actions={actions} />;
+/* ====================== PROFIL ====================== */
+function Profil({ userId, email, vuesTotal, reloadProfile, actions }: { userId: string; email: string; vuesTotal: number; reloadProfile: () => void; actions: ClipActions }) {
+  const [p, setP] = useState<any>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    getSupabase().from("profiles").select("*").eq("id", userId).maybeSingle().then(({ data }) => setP(data || {}));
+  }, [userId]);
+  function set(k: string, v: any) { setP((o: any) => ({ ...o, [k]: v })); }
+  async function save() {
+    setBusy(true);
+    await getSupabase().from("profiles").update({
+      display_name: p.display_name, tiktok: p.tiktok, instagram: p.instagram, youtube: p.youtube,
+      country: p.country, payout_method: p.payout_method, payout_detail: p.payout_detail,
+    }).eq("id", userId);
+    setBusy(false); reloadProfile(); actions.showToast("Profil enregistré");
+  }
+  async function logout() { await getSupabase().auth.signOut(); }
+
+  const r = rankInfo(vuesTotal);
+  if (!p) return <div className="wrap"><div className="empty">Chargement…</div></div>;
 
   return (
     <>
-      <Hud name={userName || "Clipper"} sub="Sergent · Niveau 7" rank="🔥 12 j de série" />
+      <div className="eyebrow" style={{ marginTop: 14 }}>Ton profil</div>
+      <h2 className="display" style={{ fontSize: 22, margin: "4px 0 10px" }}>{p.display_name || "Clipper"}</h2>
+      <div className="stats">
+        <div className="stat"><div className="v mono">{r.level}</div><div className="l">niveau</div></div>
+        <div className="stat"><div className="v mono">{r.rank}</div><div className="l">rang</div></div>
+        <div className="stat"><div className="v mono">{fmt(vuesTotal)}</div><div className="l">vues totales</div></div>
+      </div>
+
+      <div className="sec-h"><h2>Badges</h2></div>
+      <div className="card" style={{ display: "flex", gap: 9, flexWrap: "wrap" }}>
+        {["🚀 Premier clip", "🔥 En activité", "🎯 Qualité", "⚡ Sprint"].map((b) => <span key={b} className="pill p-track" style={{ padding: "7px 12px" }}>{b}</span>)}
+      </div>
+
+      <div className="sec-h"><h2>Mes comptes</h2></div>
+      <div className="card">
+        <div className="field"><label>Pseudo</label><input value={p.display_name || ""} onChange={(e) => set("display_name", e.target.value)} /></div>
+        <div className="field"><label>TikTok</label><input value={p.tiktok || ""} onChange={(e) => set("tiktok", e.target.value)} placeholder="@ton_compte" /></div>
+        <div className="field"><label>Instagram</label><input value={p.instagram || ""} onChange={(e) => set("instagram", e.target.value)} placeholder="@ton_compte" /></div>
+        <div className="field"><label>YouTube</label><input value={p.youtube || ""} onChange={(e) => set("youtube", e.target.value)} placeholder="chaîne" /></div>
+        <div className="field"><label>Pays</label><input value={p.country || ""} onChange={(e) => set("country", e.target.value)} /></div>
+      </div>
+
+      <div className="sec-h"><h2>Paiement</h2></div>
+      <div className="card">
+        <div className="field"><label>Méthode</label>
+          <select value={p.payout_method || "paypal"} onChange={(e) => set("payout_method", e.target.value)}>
+            <option value="paypal">PayPal</option><option value="iban">Virement (IBAN)</option><option value="autre">Autre</option>
+          </select></div>
+        <div className="field"><label>{p.payout_method === "iban" ? "IBAN" : "Email PayPal"}</label><input value={p.payout_detail || ""} onChange={(e) => set("payout_detail", e.target.value)} /></div>
+      </div>
+
+      <button className="btn btn-pri" style={{ marginTop: 16, padding: 14 }} onClick={save} disabled={busy}>{busy ? "Enregistrement…" : "Enregistrer"}</button>
+      <button className="btn btn-gh" style={{ marginTop: 9, padding: 12 }} onClick={logout}>Se déconnecter</button>
+      <div style={{ fontSize: 11.5, color: "var(--mut2)", textAlign: "center", marginTop: 12 }}>Connecté en tant que {email}</div>
+    </>
+  );
+}
+
+/* ====================== RACINE ====================== */
+export default function Clipper({ tab, camp, clipDetail, clips, userName, userEmail, userId, vuesTotalSeed, reloadProfile, actions }: {
+  tab: string; camp: string | null; clipDetail: string | null; clips: MyClip[];
+  userName?: string | null; userEmail?: string | null; userId: string;
+  vuesTotalSeed?: number; reloadProfile: () => void; actions: ClipActions;
+}) {
+  const vuesTotal = clips.reduce((s, c) => s + c.vues, 0);
+  const vues7 = clips.reduce((s, c) => s + Math.max(0, c.d7), 0);
+  const r = rankInfo(vuesTotal);
+
+  // place au classement (parmi la démo + moi)
+  const board = [...clippersFull.map((c) => c.vues7), vues7].sort((a, b) => b - a);
+  const place = board.indexOf(vues7) + 1;
+
+  let screen: React.ReactNode;
+  if (tab === "camp") screen = <Campaigns camp={camp} actions={actions} />;
+  else if (tab === "clips") {
+    const c = clipDetail ? clips.find((x) => x.id === clipDetail) : null;
+    screen = c ? <ClipDetail clip={c} actions={actions} /> : <Mine clips={clips} actions={actions} />;
+  } else if (tab === "bilan") screen = <Bilan clips={clips} />;
+  else if (tab === "classement") screen = <Classement name={userName || "Toi"} vues7={vues7} />;
+  else if (tab === "profil") screen = <Profil userId={userId} email={userEmail || ""} vuesTotal={vuesTotal} reloadProfile={reloadProfile} actions={actions} />;
+  else screen = <Home clips={clips} name={userName || "Clipper"} place={place} actions={actions} />;
+
+  return (
+    <>
+      <div className="hud" onClick={() => actions.go("profil")} style={{ cursor: "pointer" }}>
+        <div className="hud-top">
+          <div className="ava">{(userName || "C")[0].toUpperCase()}</div>
+          <div><div className="hud-name">{userName || "Clipper"}</div><div className="hud-sub">{r.rank} · Niveau {r.level}</div></div>
+          <div className="rank-pill"><span className="dot" />#{place} cette semaine</div>
+        </div>
+      </div>
       <div className="wrap">{screen}</div>
     </>
   );

@@ -17,6 +17,7 @@ export type ClipStatus = "track" | "paid" | "hold";
 export type MyClip = {
   id: string; asset: string; plat: string;
   vues: number; d7: number; st: ClipStatus;
+  url?: string; ago?: number;
 };
 export type Challenge = { t: string; sub: string; prog: number; reward: string; c: "" | "c2" };
 export type Clipper = { n: string; rk: string; vues: number; gain: number; clips: number };

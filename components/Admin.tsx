@@ -14,6 +14,7 @@ export type AdmActions = {
   openClipper: (id: string) => void;
   openNewChallenge: () => void;
   openNewCampaign: () => void;
+  openPayVerify: (id: string) => void;
   showToast: (m: string) => void;
 };
 
@@ -213,7 +214,7 @@ function ClipperDetail({ c, actions }: { c: ClipperRow; actions: AdmActions }) {
           <div className="t">{c.payout}</div>
           <div className="s">{c.payoutDetail}</div>
         </div>
-        <button className="btn btn-pri" style={{ width: "auto", padding: "10px 14px" }} onClick={() => actions.showToast(`${euro(c.gain)} marqués comme versés à ${c.name}`)}>Marquer payé · {euro(c.gain)}</button>
+        <button className="btn btn-pri" style={{ width: "auto", padding: "10px 14px" }} onClick={() => actions.openPayVerify(c.id)}>Vérifier & payer</button>
       </div>
     </>
   );
@@ -342,7 +343,7 @@ function Payments({ actions }: { actions: AdmActions }) {
             <div style={{ flex: 1 }}><div className="t">{c.name}</div><div className="s">{c.payout} · {fmt(c.vues7)} vues · 7 j</div></div>
             <div className="end" style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <div className="vue mono" style={{ color: "var(--mint)" }}>{euro(c.gain)}</div>
-              <button className="btn btn-pri" style={{ width: "auto", padding: "8px 12px" }} onClick={() => actions.showToast(`${euro(c.gain)} versés à ${c.name}`)}>Payer</button>
+              <button className="btn btn-pri" style={{ width: "auto", padding: "8px 12px" }} onClick={() => actions.openPayVerify(c.id)}>Vérifier</button>
             </div>
           </div>
         ))}
@@ -351,11 +352,83 @@ function Payments({ actions }: { actions: AdmActions }) {
   );
 }
 
-export default function Admin({ tab, actions, userName, clipperId }: {
-  tab: string; actions: AdmActions; userName?: string | null; clipperId?: string | null;
+/* ---------- VÉRIFICATION AVANT PAIEMENT ---------- */
+function rateOf(campId: string) {
+  const c = campaigns.find((x) => x.id === campId);
+  return c ? c.rate : 1;
+}
+function subtotal(k: AdminClip) {
+  return (Math.max(0, k.d7) / 1000) * rateOf(k.campaign);
+}
+function PayClipRow({ k, excluded, reason }: { k: AdminClip; excluded?: boolean; reason?: string }) {
+  const sub = subtotal(k);
+  return (
+    <a className="row cliprow" href={k.url} target="_blank" rel="noopener noreferrer">
+      <div className="thumb" style={{ background: "var(--surf2)", color: "var(--mut)" }}>{platLabel[k.platform][0]}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="t" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{k.asset} <span className="ext">↗</span></div>
+        <div className="s">{platLabel[k.platform]} · {fmt(Math.max(0, k.d7))} vues nettes {reason && <span className="pill p-hold" style={{ marginLeft: 4 }}>{reason}</span>}</div>
+      </div>
+      <div className="end">
+        <div className="vue" style={{ color: excluded ? "var(--mut2)" : "var(--mint)", textDecoration: excluded ? "line-through" : "none" }}>{euro(sub)}</div>
+      </div>
+    </a>
+  );
+}
+function PayVerify({ c, actions }: { c: ClipperRow; actions: AdmActions }) {
+  const clips = adminClips.filter((k) => k.clipperId === c.id);
+  const sains = clips.filter((k) => k.st === "track" && k.d7 > 0);
+  const exclus = clips.filter((k) => !(k.st === "track" && k.d7 > 0));
+  const total = sains.reduce((s, k) => s + subtotal(k), 0);
+  const exclusTotal = exclus.reduce((s, k) => s + (Math.max(0, k.d7) / 1000) * rateOf(k.campaign), 0);
+  const geles = exclus.filter((k) => k.st === "hold").length;
+
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
+        <button className="btn btn-gh" style={{ width: "auto", padding: "8px 12px" }} onClick={() => actions.go("pay")}>← Paiements</button>
+      </div>
+      <div className="eyebrow" style={{ marginTop: 14 }}>Vérification avant paiement</div>
+      <h2 className="display" style={{ fontSize: 22, margin: "4px 0 10px" }}>{c.name}</h2>
+
+      <div className="card">
+        <div className="row" style={{ paddingTop: 0 }}><div className="ck" style={{ color: "var(--mint)", fontWeight: 700 }}>✓</div><div style={{ flex: 1 }}><div className="t">{sains.length} clips comptés</div><div className="s">Progression positive, vues vivantes</div></div></div>
+        <div className="row"><div style={{ color: geles ? "var(--amber)" : "var(--mut2)", fontWeight: 700 }}>{geles ? "!" : "✓"}</div><div style={{ flex: 1 }}><div className="t">{geles} clip{geles > 1 ? "s" : ""} gelé{geles > 1 ? "s" : ""}</div><div className="s">Exclus du versement (progression négative)</div></div></div>
+        <div className="row"><div style={{ color: "var(--mint)", fontWeight: 700 }}>✓</div><div style={{ flex: 1 }}><div className="t">Aucun doublon détecté</div><div className="s">Liens vérifiés sur chaque plateforme</div></div></div>
+        <div style={{ fontSize: 11.5, color: "var(--mut2)", marginTop: 6 }}>Ouvre chaque vidéo (↗) pour la contrôler avant de valider.</div>
+      </div>
+
+      <div className="sec-h"><h2>Clips comptés</h2></div>
+      <div className="card">{sains.length ? sains.map((k) => <PayClipRow key={k.id} k={k} />) : <div className="empty">Aucun clip à payer cette fenêtre.</div>}</div>
+
+      {exclus.length > 0 && (
+        <>
+          <div className="sec-h"><h2>Exclus du paiement</h2></div>
+          <div className="card">{exclus.map((k) => <PayClipRow key={k.id} k={k} excluded reason={k.st === "hold" ? "gelé" : "pas de progression"} />)}</div>
+        </>
+      )}
+
+      <div className="card" style={{ marginTop: 14, background: "linear-gradient(150deg,rgba(53,230,161,.12),rgba(45,226,230,.04)),var(--surf)", borderColor: "rgba(53,230,161,.25)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+          <div style={{ fontSize: 12, color: "var(--mut)", fontWeight: 600 }}>À verser à {c.name}</div>
+          <div className="display" style={{ fontSize: 30, fontWeight: 700 }}>{euro(total)}</div>
+        </div>
+        <div style={{ fontSize: 12, color: "var(--mut)", marginTop: 4 }}>{sains.length} clips sains comptés · {euro(exclusTotal)} gelés exclus</div>
+        <div style={{ fontSize: 11.5, color: "var(--mut2)", marginTop: 8 }}>En validant, les vues actuelles sont figées comme preuve (protège contre la suppression après paiement).</div>
+        <button className="btn btn-pri" style={{ marginTop: 14, padding: 14 }} onClick={() => { actions.showToast(`${euro(total)} versés à ${c.name} · preuve archivée`); actions.go("pay"); }}>Verser {euro(total)} · figer la preuve</button>
+      </div>
+    </>
+  );
+}
+
+export default function Admin({ tab, actions, userName, clipperId, payClipper }: {
+  tab: string; actions: AdmActions; userName?: string | null; clipperId?: string | null; payClipper?: string | null;
 }) {
   let screen: React.ReactNode;
-  if (tab === "clippers") {
+  const payTarget = payClipper ? clippersFull.find((x) => x.id === payClipper) : null;
+  if (payTarget) {
+    screen = <PayVerify c={payTarget} actions={actions} />;
+  } else if (tab === "clippers") {
     const c = clipperId ? clippersFull.find((x) => x.id === clipperId) : null;
     screen = c ? <ClipperDetail c={c} actions={actions} /> : <Clippers actions={actions} />;
   } else if (tab === "campaigns") screen = <Campaigns actions={actions} />;
