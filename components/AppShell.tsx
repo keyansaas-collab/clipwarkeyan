@@ -7,6 +7,7 @@ import Admin, { AdmActions } from "./Admin";
 import { assets, campaigns, initialClips, MyClip } from "@/lib/data";
 
 type Role = "clip" | "adm";
+type NavLink = { id: string; label: string; icon: string };
 
 export default function AppShell() {
   const [role, setRole] = useState<Role>("clip");
@@ -16,7 +17,6 @@ export default function AppShell() {
   const [sheet, setSheet] = useState<React.ReactNode>(null);
   const [toast, setToast] = useState<string | null>(null);
 
-  // compteurs de vues "en direct" (War Room)
   useEffect(() => {
     if (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion:reduce)").matches) return;
     const id = setInterval(() => {
@@ -88,39 +88,62 @@ export default function AppShell() {
 
   const clipActions: ClipActions = { go, openCamp, openSubmit, openDownload };
   const admActions: AdmActions = { go, openImport };
-
-  const navItems = role === "adm"
-    ? [["dash", "Dashboard", "home"], ["assets", "Assets", "grid"], ["__fab", "", "plus"], ["clippers", "Clippers", "user"], ["fraud", "Anti-triche", "alert"]]
-    : [["home", "Accueil", "home"], ["camp", "Campagnes", "grid"], ["__fab", "", "plus"], ["clips", "Mes clips", "clip"], ["bilan", "Bilan", "chart"]];
   const adm = role === "adm";
+
+  const navLinks: NavLink[] = adm
+    ? [{ id: "dash", label: "Dashboard", icon: "home" }, { id: "assets", label: "Assets", icon: "grid" }, { id: "clippers", label: "Clippers", icon: "user" }, { id: "fraud", label: "Anti-triche", icon: "alert" }]
+    : [{ id: "home", label: "Accueil", icon: "home" }, { id: "camp", label: "Campagnes", icon: "grid" }, { id: "clips", label: "Mes clips", icon: "clip" }, { id: "bilan", label: "Bilan", icon: "chart" }];
+  const fabLabel = adm ? "Importer un asset" : "Soumettre un clip";
+  const fabAction = adm ? openImport : openSubmit;
+
+  const RoleSwitch = () => (
+    <div className="role">
+      <button className={role === "clip" ? "on" : ""} onClick={() => switchRole("clip")}>Clipper</button>
+      <button className={role === "adm" ? "on adm" : ""} onClick={() => switchRole("adm")}>Keyan · Admin</button>
+    </div>
+  );
 
   return (
     <div className="shell">
-      <div className="role">
-        <button className={role === "clip" ? "on" : ""} onClick={() => switchRole("clip")}>Clipper</button>
-        <button className={role === "adm" ? "on adm" : ""} onClick={() => switchRole("adm")}>Keyan · Admin</button>
+      {/* ── barre latérale (desktop) ── */}
+      <aside className="side">
+        <div className="brand">ClipWar <span>War Room</span></div>
+        <RoleSwitch />
+        <button className="btn btn-pri side-action" onClick={fabAction}>+ {fabLabel}</button>
+        <nav className="side-nav">
+          {navLinks.map((it) => (
+            <a key={it.id} className={"side-link " + (tab === it.id ? "on " + (adm ? "adm" : "") : "")} onClick={() => go(it.id)}>
+              <Icon name={it.icon} /><span>{it.label}</span>
+            </a>
+          ))}
+        </nav>
+      </aside>
+
+      {/* ── contenu ── */}
+      <div className="main">
+        <div className="role mobile-only">
+          <button className={role === "clip" ? "on" : ""} onClick={() => switchRole("clip")}>Clipper</button>
+          <button className={role === "adm" ? "on adm" : ""} onClick={() => switchRole("adm")}>Keyan · Admin</button>
+        </div>
+        {role === "clip"
+          ? <Clipper tab={tab} camp={camp} clips={clips} actions={clipActions} />
+          : <Admin tab={tab} actions={admActions} />}
       </div>
 
-      {role === "clip"
-        ? <Clipper tab={tab} camp={camp} clips={clips} actions={clipActions} />
-        : <Admin tab={tab} actions={admActions} />}
-
-      <div className="nav">
-        {navItems.map((it) => {
-          if (it[0] === "__fab") {
-            return (
-              <div className="nav mid" key="fab" style={{ background: "none", border: "none", position: "static" }}>
-                <div className={"fab " + (adm ? "adm" : "")} onClick={adm ? openImport : openSubmit}><Icon name="plus" /></div>
+      {/* ── nav du bas (mobile) ── */}
+      <div className="nav mobile-only">
+        {navLinks.map((it, i) => (
+          <React.Fragment key={it.id}>
+            {i === 2 && (
+              <div className="nav mid" style={{ background: "none", border: "none", position: "static" }}>
+                <div className={"fab " + (adm ? "adm" : "")} onClick={fabAction}><Icon name="plus" /></div>
               </div>
-            );
-          }
-          const on = tab === it[0] ? "on " + (adm ? "adm" : "") : "";
-          return (
-            <a className={on} key={it[0]} onClick={() => go(it[0])}>
-              <Icon name={it[2]} /><span>{it[1]}</span>
+            )}
+            <a className={tab === it.id ? "on " + (adm ? "adm" : "") : ""} onClick={() => go(it.id)}>
+              <Icon name={it.icon} /><span>{it.label}</span>
             </a>
-          );
-        })}
+          </React.Fragment>
+        ))}
       </div>
 
       {sheet && (
