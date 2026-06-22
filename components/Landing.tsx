@@ -52,7 +52,7 @@ export default function Landing() {
   return (
     <div className="lp">
       <nav className="lp-nav">
-        <div className="lp-logo">ClipWar <span>War Room</span></div>
+        <img className="logo-img" src="/clipwar-logo.png" alt="ClipWar" />
         <a className="lp-btn ghost sm" href="/app">{authed ? "Ouvrir l'app" : "Se connecter"}</a>
       </nav>
 

@@ -210,6 +210,10 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
 .auth-ok{font-size:13.5px;color:var(--mint);line-height:1.6}
 .auth-err{color:var(--coral);font-size:12.5px;margin-top:12px}
 
+.logo-img{height:34px;width:auto;display:block}
+.logo-img.big{height:46px}
+@media(max-width:720px){ .logo-img{height:30px} .logo-img.big{height:42px} }
+
 /* ===================== LANDING ===================== */
 .lp{width:100%;max-width:1120px;margin:0 auto;padding:0 22px}
 .lp-nav{display:flex;align-items:center;justify-content:space-between;padding:20px 0}

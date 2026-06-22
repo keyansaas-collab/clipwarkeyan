@@ -32,7 +32,7 @@ export default function Login() {
   return (
     <div className="shell">
       <div className="auth-wrap">
-        <div className="brand" style={{ justifyContent: "center" }}>ClipWar <span>War Room</span></div>
+        <img className="logo-img big" src="/clipwar-logo.png" alt="ClipWar" style={{ margin: "0 auto" }} />
 
         <div className="auth-card">
           {sent ? (

@@ -127,7 +127,7 @@ export default function AppShell() {
     return (
       <div className="shell">
         <div className="auth-wrap">
-          <div className="brand" style={{ justifyContent: "center" }}>ClipWar <span>War Room</span></div>
+          <img className="logo-img big" src="/clipwar-logo.png" alt="ClipWar" style={{ margin: "0 auto" }} />
           <div className="auth-sub" style={{ marginTop: 12 }}>Chargement…</div>
         </div>
       </div>
@@ -158,7 +158,7 @@ export default function AppShell() {
     <div className="shell">
       {/* ── barre latérale (desktop) ── */}
       <aside className="side">
-        <div className="brand">ClipWar <span>War Room</span></div>
+        <img className="logo-img" src="/clipwar-logo.png" alt="ClipWar" style={{ marginBottom: 10 }} />
         {isStaff && <PreviewSwitch />}
         <button className="btn btn-pri side-action" onClick={fabAction}>+ {fabLabel}</button>
         <nav className="side-nav">
