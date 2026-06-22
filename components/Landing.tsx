@@ -35,18 +35,18 @@ export default function Landing() {
   }, []);
 
   const max = Math.max(...board.map((b) => b.vues));
-  const cta = authed ? "Entrer dans la War Room" : "Rejoindre la War Room";
+  const cta = authed ? "Entrer dans la War Room" : "Rejoindre l'armée";
 
   const steps = [
-    ["01", "Prends un asset", "Les clippers piochent dans tes vidéos sources, directement dans l'app. Chaque téléchargement est tracé."],
-    ["02", "Poste & soumets", "Ils montent, postent sur TikTok, Instagram ou YouTube, puis collent le lien. Le suivi des vues démarre tout seul."],
-    ["03", "Sois payé aux vues", "Paiement sur les vues nettes réelles, en fenêtre 7 jours glissants. Une vidéo qui explose à J+15 paie ce jour-là."],
+    ["01", "Pioche un contenu", "Tu choisis une vidéo source dans l'app et tu la télécharges. Plusieurs angles, plusieurs montages — fais-toi plaisir."],
+    ["02", "Poste & colle ton lien", "Tu montes, tu postes sur TikTok, Insta ou YouTube, puis tu colles le lien. Le suivi de tes vues démarre tout seul."],
+    ["03", "Encaisse aux vues", "Tu es payé à tes vues nettes réelles, en fenêtre 7 jours glissants. Une vidéo qui explose à J+15 ? Elle te paie ce jour-là."],
   ];
   const feats = [
-    ["chart", "Vues réelles, multi-plateformes", "YouTube en API officielle, TikTok et Instagram relevés automatiquement. Pas d'estimation : du vrai."],
-    ["alert", "Anti-triche intégré", "Gel automatique des paiements si les vues chutent, détection des doublons, contrôle que le clip existe toujours."],
-    ["user", "Challenges, rangs & streaks", "Des sprints à cagnotte, un classement qui grimpe, des grades. De quoi faire revenir tes clippers."],
-    ["clip", "Pilotage centralisé", "Tes campagnes, tes assets, tes pépites (ratio vues/téléchargement), tes versements — tout dans une seule War Room."],
+    ["chart", "Payé à tes vraies vues", "On relève tes vues réelles sur TikTok, Insta et YouTube. Pas d'estimation au doigt mouillé : ce que tu fais, tu le touches."],
+    ["alert", "Zéro arnaque", "Comptage transparent, paiement garanti tant que les vues tiennent. Personne ne gonfle ni ne rogne tes gains."],
+    ["user", "Monte en grade", "Grimpe au classement, débloque des rangs, enchaîne les séries. Les meilleurs clippers, ça se voit."],
+    ["clip", "Challenges & cagnottes", "Des sprints à prix, des objectifs collectifs. De quoi encaisser plus quand tu envoies fort."],
   ];
 
   return (
@@ -58,11 +58,11 @@ export default function Landing() {
 
       <header className="lp-hero">
         <img className="lp-herologo" src="/clipwar-logo.png" alt="ClipWar" />
-        <div className="lp-eyebrow"><span className="dot" /> La plateforme des armées de clippers</div>
-        <h1 className="lp-h1">L'armée de clippers qui fait <span className="g">exploser tes vues</span>.</h1>
+        <div className="lp-eyebrow"><span className="dot" /> Rejoins l&apos;armée de clippers</div>
+        <h1 className="lp-h1">Clippe, poste, <span className="g">encaisse</span>.</h1>
         <p className="lp-lead">
-          ClipWar arme tes clippers : ils prennent tes assets, postent partout, et sont payés aux vues réelles.
-          Toi, tu pilotes la War Room.
+          Pioche dans les contenus, poste sur TikTok, Insta et YouTube, et sois payé à tes vues réelles —
+          sans arnaque. Plus tu fais de vues, plus tu montes.
         </p>
         <div className="lp-actions">
           <a className="lp-btn pri" href="/app">{cta}</a>
@@ -97,7 +97,7 @@ export default function Landing() {
 
       <section className="lp-section" id="how">
         <h2>Comment ça marche</h2>
-        <p className="sub">Trois étapes, de l'asset au paiement.</p>
+        <p className="sub">Trois étapes, du contenu au paiement.</p>
         <div className="lp-steps">
           {steps.map((s) => (
             <div className="lp-step" key={s[0]}>
@@ -110,8 +110,8 @@ export default function Landing() {
       </section>
 
       <section className="lp-section">
-        <h2>Pensé pour le clipping à grande échelle</h2>
-        <p className="sub">Tout ce qu'il faut pour que « vues = argent » tienne sans faille.</p>
+        <h2>Pourquoi clipper avec ClipWar</h2>
+        <p className="sub">Tes vues comptent vraiment — et tu es payé pour.</p>
         <div className="lp-feats">
           {feats.map((f) => (
             <div className="lp-feat" key={f[1]}>
@@ -123,11 +123,12 @@ export default function Landing() {
       </section>
 
       <section className="lp-foot">
-        <h2>Prête à lancer ta War Room ?</h2>
-        <p>Crée ton compte en 10 secondes — lien magique ou Google. Tes clippers te rejoignent juste après.</p>
+        <h2>Prêt à transformer tes vues en cash ?</h2>
+        <p>Crée ton compte en 10 secondes — lien magique ou Google. Pioche ton premier contenu juste après.</p>
         <a className="lp-btn pri" href="/app">{cta}</a>
       </section>
 
+      <div className="lp-org">Tu gères une équipe de clippers ? Le mode organisation arrive bientôt.</div>
       <div className="lp-copy">ClipWar · War Room — © 2026</div>
     </div>
   );

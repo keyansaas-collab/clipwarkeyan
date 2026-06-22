@@ -270,6 +270,7 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
 .lp-foot h2{font-family:"Space Grotesk",sans-serif;font-size:30px;font-weight:700;letter-spacing:-.5px}
 .lp-foot p{color:var(--mut);margin:12px auto 22px;max-width:440px;line-height:1.6}
 .lp-copy{text-align:center;color:var(--mut2);font-size:12px;padding-bottom:30px}
+.lp-org{text-align:center;color:var(--mut2);font-size:12.5px;padding:6px 0 4px}
 
 @media(max-width:720px){
   .lp-h1{font-size:33px}

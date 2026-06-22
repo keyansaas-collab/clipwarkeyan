@@ -9,7 +9,7 @@
 create or replace function public.guard_role_change()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin
-  if (new.role is distinct from old.role) and not public.is_staff() then
+  if (new.role is distinct from old.role) and auth.uid() is not null and not public.is_staff() then
     raise exception 'Modification du rôle non autorisée';
   end if;
   return new;
