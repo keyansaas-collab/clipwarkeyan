@@ -7,6 +7,7 @@ import {
   adminClips, agoLabel, platLabel,
   campName, campGrad, initials, fmt, euro, Asset, ClipperRow, AdminClip,
 } from "@/lib/data";
+import { Catalog, AssetReal, campNameOf, campGradOf, initialsOf } from "@/lib/catalog";
 
 export type AdmActions = {
   go: (tab: string) => void;
@@ -220,35 +221,34 @@ function ClipperDetail({ c, actions }: { c: ClipperRow; actions: AdmActions }) {
   );
 }
 
-/* ---------- CAMPAGNES ---------- */
-function Campaigns({ actions }: { actions: AdmActions }) {
+/* ---------- CAMPAGNES (catalogue réel) ---------- */
+function Campaigns({ catalog, actions }: { catalog: Catalog; actions: AdmActions }) {
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14 }}>
         <div><div className="eyebrow">Contenus</div><h2 className="display" style={{ fontSize: 22, marginTop: 4 }}>Campagnes</h2></div>
         <button className="btn btn-pri adm-actionbtn" onClick={actions.openNewCampaign}>+ Nouvelle</button>
       </div>
-      {campaigns.map((c) => {
-        const camAssets = assets.filter((a) => a.camp === c.id);
-        const vues = camAssets.reduce((s, a) => s + a.vues, 0);
-        return (
-          <div className="card" key={c.id} style={{ marginTop: 12 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 13 }}>
-              <div className="thumb" style={{ background: c.grad }}>{initials(c.name)}</div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 600 }}>{c.name}</div>
-                <div className="s">{c.assets} assets · {String(c.rate).replace(".", ",")} € / 1000 vues</div>
-              </div>
-              <span className="pill p-paid">Active</span>
+      {catalog.loading && <div className="card" style={{ marginTop: 12 }}><div className="empty">Chargement…</div></div>}
+      {!catalog.loading && catalog.campaigns.length === 0 && (
+        <div className="card" style={{ marginTop: 12 }}><div className="empty">Aucune campagne. Crée la première avec « + Nouvelle ».</div></div>
+      )}
+      {catalog.campaigns.map((c) => (
+        <div className="card" key={c.id} style={{ marginTop: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 13 }}>
+            <div className="thumb" style={{ background: c.accent }}>{initialsOf(c.name)}</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600 }}>{c.name}</div>
+              <div className="s">{c.assetCount} asset{c.assetCount > 1 ? "s" : ""} · {String(c.rate).replace(".", ",")} € / 1000 vues</div>
             </div>
-            <div className="adm-kpis" style={{ gridTemplateColumns: "repeat(3,1fr)" }}>
-              <div className="adm-kpi"><div className="v">{fmt(vues)}</div><div className="l">vues générées</div></div>
-              <div className="adm-kpi"><div className="v">{camAssets.reduce((s, a) => s + a.clips, 0)}</div><div className="l">clips</div></div>
-              <div className="adm-kpi"><div className="v">{c.assets}</div><div className="l">assets</div></div>
-            </div>
+            <span className={"pill " + (c.is_active ? "p-paid" : "p-hold")}>{c.is_active ? "Active" : "Inactive"}</span>
           </div>
-        );
-      })}
+          <div className="adm-kpis" style={{ gridTemplateColumns: "repeat(2,1fr)" }}>
+            <div className="adm-kpi"><div className="v">{c.assetCount}</div><div className="l">assets</div></div>
+            <div className="adm-kpi"><div className="v">{c.clipCount}</div><div className="l">clips soumis</div></div>
+          </div>
+        </div>
+      ))}
     </>
   );
 }
@@ -284,8 +284,21 @@ function Challenges({ actions }: { actions: AdmActions }) {
   );
 }
 
-/* ---------- ASSETS ---------- */
-function AssetsScreen({ actions }: { actions: AdmActions }) {
+/* ---------- ASSETS (catalogue réel) ---------- */
+function CatalogAssetRow({ a, camps }: { a: AssetReal; camps: Catalog["campaigns"] }) {
+  const name = campNameOf(camps, a.campaign_id) || "Sans campagne";
+  return (
+    <div className="row" style={{ alignItems: "flex-start" }}>
+      <div className="thumb" style={{ background: campGradOf(camps, a.campaign_id) }}>{name[0]}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="t" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.title}</div>
+        <div className="s">{name}{a.duration ? " · " + a.duration : ""} · {a.source === "r2" ? "R2" : "Drive"}</div>
+      </div>
+      <div className="end"><div className="vue mono">↓ {fmt(a.downloads)}</div><div className="delta flat">{a.clips} clips</div></div>
+    </div>
+  );
+}
+function AssetsScreen({ catalog, actions }: { catalog: Catalog; actions: AdmActions }) {
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14 }}>
@@ -293,7 +306,13 @@ function AssetsScreen({ actions }: { actions: AdmActions }) {
         <button className="btn btn-pri adm-actionbtn" onClick={actions.openImport}>+ Importer</button>
       </div>
       <p style={{ color: "var(--mut)", fontSize: 12.5, margin: "4px 0 6px" }}>Le fichier vit sur R2 / Drive — l&apos;app garde la fiche et trace chaque téléchargement.</p>
-      <div className="card" style={{ marginTop: 8 }}>{assets.map((a) => <PepiteRow a={a} key={a.id} />)}</div>
+      {catalog.loading && <div className="card" style={{ marginTop: 8 }}><div className="empty">Chargement…</div></div>}
+      {!catalog.loading && catalog.assets.length === 0 && (
+        <div className="card" style={{ marginTop: 8 }}><div className="empty">Aucun asset. Importe le premier avec « + Importer ».</div></div>
+      )}
+      {catalog.assets.length > 0 && (
+        <div className="card" style={{ marginTop: 8 }}>{catalog.assets.map((a) => <CatalogAssetRow key={a.id} a={a} camps={catalog.campaigns} />)}</div>
+      )}
     </>
   );
 }
@@ -421,8 +440,8 @@ function PayVerify({ c, actions }: { c: ClipperRow; actions: AdmActions }) {
   );
 }
 
-export default function Admin({ tab, actions, userName, clipperId, payClipper }: {
-  tab: string; actions: AdmActions; userName?: string | null; clipperId?: string | null; payClipper?: string | null;
+export default function Admin({ tab, actions, catalog, userName, clipperId, payClipper }: {
+  tab: string; actions: AdmActions; catalog: Catalog; userName?: string | null; clipperId?: string | null; payClipper?: string | null;
 }) {
   let screen: React.ReactNode;
   const payTarget = payClipper ? clippersFull.find((x) => x.id === payClipper) : null;
@@ -431,10 +450,10 @@ export default function Admin({ tab, actions, userName, clipperId, payClipper }:
   } else if (tab === "clippers") {
     const c = clipperId ? clippersFull.find((x) => x.id === clipperId) : null;
     screen = c ? <ClipperDetail c={c} actions={actions} /> : <Clippers actions={actions} />;
-  } else if (tab === "campaigns") screen = <Campaigns actions={actions} />;
+  } else if (tab === "campaigns") screen = <Campaigns catalog={catalog} actions={actions} />;
   else if (tab === "clips") screen = <ClipsFeed />;
   else if (tab === "challenges") screen = <Challenges actions={actions} />;
-  else if (tab === "assets") screen = <AssetsScreen actions={actions} />;
+  else if (tab === "assets") screen = <AssetsScreen catalog={catalog} actions={actions} />;
   else if (tab === "fraud") screen = <Fraud />;
   else if (tab === "pay") screen = <Payments actions={actions} />;
   else screen = <Dash actions={actions} />;

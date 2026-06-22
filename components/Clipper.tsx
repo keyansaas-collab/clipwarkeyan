@@ -4,15 +4,16 @@ import React, { useEffect, useState } from "react";
 import { Icon } from "./ui";
 import { getSupabase } from "@/lib/supabase/client";
 import {
-  campaigns, assets, challenges, clippersFull, platLabel,
-  fmt, euro, campGrad, initials, MyClip,
+  challenges, clippersFull, platLabel,
+  fmt, euro, MyClip,
 } from "@/lib/data";
+import { Catalog, AssetReal, initialsOf } from "@/lib/catalog";
 
 export type ClipActions = {
   go: (tab: string) => void;
   openCamp: (id: string) => void;
   openSubmit: () => void;
-  openDownload: (name: string) => void;
+  openDownload: (asset: AssetReal) => void;
   openClip: (id: string) => void;
   showToast: (m: string) => void;
 };
@@ -104,11 +105,12 @@ function Home({ clips, name, place, actions }: { clips: MyClip[]; name: string; 
   );
 }
 
-/* ====================== CAMPAGNES ====================== */
-function Campaigns({ camp, actions }: { camp: string | null; actions: ClipActions }) {
+/* ====================== CAMPAGNES (catalogue réel) ====================== */
+function Campaigns({ camp, catalog, actions }: { camp: string | null; catalog: Catalog; actions: ClipActions }) {
   if (camp) {
-    const c = campaigns.find((x) => x.id === camp)!;
-    const list = assets.filter((a) => a.camp === camp);
+    const c = catalog.campaigns.find((x) => x.id === camp);
+    const list = catalog.assets.filter((a) => a.campaign_id === camp);
+    if (!c) return <div className="empty" style={{ marginTop: 20 }}>Campagne introuvable.</div>;
     return (
       <>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
@@ -116,15 +118,19 @@ function Campaigns({ camp, actions }: { camp: string | null; actions: ClipAction
           <div><div style={{ fontWeight: 600, fontSize: 15 }}>{c.name}</div>
             <div style={{ fontSize: 12, color: "var(--mut)" }}>{String(c.rate).replace(".", ",")} € / 1000 vues</div></div>
         </div>
-        <div className="grid">
-          {list.map((a) => (
-            <div className="asset" key={a.id}>
-              <div className="cov" style={{ background: campGrad(a.camp) }}><div className="play">▶</div><div className="dur">{a.dur}</div></div>
-              <div className="b"><div className="ti">{a.t}</div><div className="mt">↓ {fmt(a.dl)} · {a.clips} clips</div>
-                <button className="btn btn-pri" onClick={() => actions.openDownload(a.t)}>Télécharger</button></div>
-            </div>
-          ))}
-        </div>
+        {list.length === 0 ? (
+          <div className="card" style={{ marginTop: 14 }}><div className="empty">Aucun asset dans cette campagne pour l&apos;instant.</div></div>
+        ) : (
+          <div className="grid">
+            {list.map((a) => (
+              <div className="asset" key={a.id}>
+                <div className="cov" style={{ background: c.accent }}><div className="play">▶</div>{a.duration && <div className="dur">{a.duration}</div>}</div>
+                <div className="b"><div className="ti">{a.title}</div><div className="mt">↓ {fmt(a.downloads)} · {a.clips} clips</div>
+                  <button className="btn btn-pri" onClick={() => actions.openDownload(a)}>Télécharger</button></div>
+              </div>
+            ))}
+          </div>
+        )}
       </>
     );
   }
@@ -133,12 +139,16 @@ function Campaigns({ camp, actions }: { camp: string | null; actions: ClipAction
       <div className="eyebrow" style={{ marginTop: 14 }}>Campagnes</div>
       <h2 className="display" style={{ fontSize: 22, margin: "4px 0 4px" }}>Choisis ton terrain</h2>
       <p style={{ color: "var(--mut)", fontSize: 13, marginBottom: 6 }}>Chaque campagne = ses contenus et son tarif aux vues.</p>
-      {campaigns.map((c) => (
+      {catalog.loading && <div className="card" style={{ marginTop: 12 }}><div className="empty">Chargement du catalogue…</div></div>}
+      {!catalog.loading && catalog.campaigns.length === 0 && (
+        <div className="card" style={{ marginTop: 12 }}><div className="empty">Aucune campagne active pour l&apos;instant. Reviens bientôt.</div></div>
+      )}
+      {catalog.campaigns.map((c) => (
         <div className="card" key={c.id} style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 14, cursor: "pointer" }} onClick={() => actions.openCamp(c.id)}>
-          <div className="thumb" style={{ width: 54, height: 54, background: c.grad }}>{initials(c.name)}</div>
+          <div className="thumb" style={{ width: 54, height: 54, background: c.accent }}>{initialsOf(c.name)}</div>
           <div style={{ flex: 1 }}><div style={{ fontWeight: 600, fontSize: 15 }}>{c.name}</div>
-            <div style={{ fontSize: 12, color: "var(--mut)", marginTop: 2 }}>{c.desc}</div>
-            <div style={{ marginTop: 7 }}><span className={"tag " + c.tag}>{c.assets} contenus</span><span className={"tag " + c.tag}>{String(c.rate).replace(".", ",")} € / 1000 vues</span></div></div>
+            <div style={{ fontSize: 12, color: "var(--mut)", marginTop: 2 }}>{c.description}</div>
+            <div style={{ marginTop: 7 }}><span className="tag">{c.assetCount} contenu{c.assetCount > 1 ? "s" : ""}</span><span className="tag">{String(c.rate).replace(".", ",")} € / 1000 vues</span></div></div>
         </div>
       ))}
     </>
@@ -323,10 +333,10 @@ function Profil({ userId, email, vuesTotal, reloadProfile, actions }: { userId: 
 }
 
 /* ====================== RACINE ====================== */
-export default function Clipper({ tab, camp, clipDetail, clips, userName, userEmail, userId, vuesTotalSeed, reloadProfile, actions }: {
-  tab: string; camp: string | null; clipDetail: string | null; clips: MyClip[];
+export default function Clipper({ tab, camp, clipDetail, clips, catalog, userName, userEmail, userId, reloadProfile, actions }: {
+  tab: string; camp: string | null; clipDetail: string | null; clips: MyClip[]; catalog: Catalog;
   userName?: string | null; userEmail?: string | null; userId: string;
-  vuesTotalSeed?: number; reloadProfile: () => void; actions: ClipActions;
+  reloadProfile: () => void; actions: ClipActions;
 }) {
   const vuesTotal = clips.reduce((s, c) => s + c.vues, 0);
   const vues7 = clips.reduce((s, c) => s + Math.max(0, c.d7), 0);
@@ -337,7 +347,7 @@ export default function Clipper({ tab, camp, clipDetail, clips, userName, userEm
   const place = board.indexOf(vues7) + 1;
 
   let screen: React.ReactNode;
-  if (tab === "camp") screen = <Campaigns camp={camp} actions={actions} />;
+  if (tab === "camp") screen = <Campaigns camp={camp} catalog={catalog} actions={actions} />;
   else if (tab === "clips") {
     const c = clipDetail ? clips.find((x) => x.id === clipDetail) : null;
     screen = c ? <ClipDetail clip={c} actions={actions} /> : <Mine clips={clips} actions={actions} />;

@@ -6,9 +6,10 @@ import Clipper, { ClipActions } from "./Clipper";
 import Admin, { AdmActions } from "./Admin";
 import Login from "./Login";
 import Onboarding from "./Onboarding";
-import SubmitSheet from "./SubmitSheet";
+import SubmitSheet, { SubmitPrefill } from "./SubmitSheet";
 import { getSupabase } from "@/lib/supabase/client";
-import { campaigns, platLabel, MyClip } from "@/lib/data";
+import { platLabel, MyClip } from "@/lib/data";
+import { useCatalog, AssetReal } from "@/lib/catalog";
 
 type Role = "clip" | "adm";
 type NavLink = { id: string; label: string; icon: string };
@@ -29,6 +30,9 @@ export default function AppShell() {
   const [clips, setClips] = useState<MyClip[]>([]);
   const [sheet, setSheet] = useState<React.ReactNode>(null);
   const [toast, setToast] = useState<string | null>(null);
+
+  // ── catalogue RÉEL (campagnes + assets), partagé clipper + admin ──
+  const catalog = useCatalog(!!session);
 
   // récupère la session + écoute les changements (login / logout)
   useEffect(() => {
@@ -103,30 +107,59 @@ export default function AppShell() {
   async function logout() { await getSupabase().auth.signOut(); }
   const closeSheet = () => setSheet(null);
 
-  function openDownload(name: string) {
+  // Téléchargement TRACÉ : on écrit l'événement (asset, clipper, date),
+  // on ouvre le fichier source, puis on propose la soumission pré-remplie.
+  async function trackDownload(asset: AssetReal) {
+    if (!session) return;
+    await getSupabase().from("asset_downloads").insert({ asset_id: asset.id, clipper_id: session.user.id });
+    if (asset.storage_url) window.open(asset.storage_url, "_blank", "noopener,noreferrer");
+    catalog.reload(); // le compteur ↓ se met à jour
+  }
+  function openDownload(asset: AssetReal) {
+    if (!session) return;
     setSheet(
       <>
         <h3>Télécharger l&apos;asset</h3>
-        <p style={{ color: "var(--mut)", fontSize: 13, marginBottom: 6 }}>{name}</p>
-        <div className="prefill">↓ Le téléchargement est tracé — il pré-remplira ta soumission.</div>
-        <button className="btn btn-pri" style={{ marginTop: 16, padding: 13 }} onClick={() => { closeSheet(); showToast("Asset téléchargé · prêt à clipper"); }}>Lancer le téléchargement</button>
+        <p style={{ color: "var(--mut)", fontSize: 13, marginBottom: 6 }}>{asset.title}</p>
+        <div className="prefill">↓ Le téléchargement est tracé — il pré-remplit ta soumission et alimente les stats par asset.</div>
+        <button
+          className="btn btn-pri"
+          style={{ marginTop: 16, padding: 13 }}
+          onClick={async () => {
+            await trackDownload(asset);
+            closeSheet();
+            showToast("Asset téléchargé · prêt à clipper");
+            openSubmit({ assetId: asset.id, campaignId: asset.campaign_id });
+          }}
+        >
+          {asset.storage_url ? "Télécharger & soumettre mon clip" : "Marquer téléchargé & soumettre"}
+        </button>
         <button className="btn btn-gh" style={{ marginTop: 9, padding: 12 }} onClick={closeSheet}>Annuler</button>
       </>
     );
   }
-  function openSubmit() {
+  function openSubmit(prefill?: SubmitPrefill) {
     if (!session) return;
-    setSheet(<SubmitSheet clipperId={session.user.id} onDone={() => { closeSheet(); showToast("Clip soumis · suivi lancé"); loadClips(); go("clips"); }} />);
+    setSheet(
+      <SubmitSheet
+        clipperId={session.user.id}
+        campaigns={catalog.campaigns}
+        assets={catalog.assets}
+        prefill={prefill ?? null}
+        onDone={() => { closeSheet(); showToast("Clip soumis · suivi lancé"); loadClips(); catalog.reload(); go("clips"); }}
+      />
+    );
   }
   function openClipper(id: string) { setTab("clippers"); setAdmClipper(id); window.scrollTo(0, 0); }
   function openPayVerify(id: string) { setPayClipper(id); window.scrollTo(0, 0); }
   function openNewChallenge() {
+    // NOTE : la création de challenge reste maquette — tranche 4 (challenges réels).
     setSheet(
       <>
         <h3>Nouveau challenge</h3>
-        <p style={{ color: "var(--mut)", fontSize: 13 }}>Une surcouche temporaire posée sur une campagne.</p>
+        <p style={{ color: "var(--mut)", fontSize: 13 }}>Une surcouche temporaire posée sur une campagne. <i>(Branchement réel : tranche 4.)</i></p>
         <div className="field"><label>Nom</label><input placeholder="Ex. Sprint Lifestyle 48h" /></div>
-        <div className="field"><label>Campagne</label><select>{campaigns.map((c) => <option key={c.id}>{c.name}</option>)}</select></div>
+        <div className="field"><label>Campagne</label><select>{catalog.campaigns.map((c) => <option key={c.id}>{c.name}</option>)}</select></div>
         <div className="field"><label>Type</label><select><option>Sprint individuel</option><option>Objectif collectif</option></select></div>
         <div className="field"><label>Durée</label><select><option>24 h</option><option>48 h</option><option>7 jours</option></select></div>
         <div className="field"><label>Cagnotte / objectif</label><input placeholder="Ex. 400 € ou 1 000 000 vues" /></div>
@@ -135,30 +168,10 @@ export default function AppShell() {
     );
   }
   function openNewCampaign() {
-    setSheet(
-      <>
-        <h3>Nouvelle campagne</h3>
-        <p style={{ color: "var(--mut)", fontSize: 13 }}>Un axe de contenu permanent (lifestyle, coaching…).</p>
-        <div className="field"><label>Nom</label><input placeholder="Ex. Lifestyle" /></div>
-        <div className="field"><label>Description</label><input placeholder="Quotidien, voyages…" /></div>
-        <div className="field"><label>Tarif (€ / 1000 vues)</label><input placeholder="Ex. 1,2" /></div>
-        <button className="btn btn-pri" style={{ marginTop: 18, padding: 14 }} onClick={() => { closeSheet(); showToast("Campagne créée"); }}>Créer la campagne</button>
-      </>
-    );
+    setSheet(<NewCampaignForm onCancel={closeSheet} onCreated={() => { closeSheet(); showToast("Campagne créée"); catalog.reload(); }} />);
   }
   function openImport() {
-    setSheet(
-      <>
-        <h3>Importer un asset</h3>
-        <p style={{ color: "var(--mut)", fontSize: 13 }}>Le fichier va sur R2 (egress gratuit) ou reste pointé sur le Drive. Jamais dans GitHub.</p>
-        <div className="field"><label>Titre</label><input placeholder="Ex. Routine du matin" /></div>
-        <div className="field"><label>Campagne</label><select>{campaigns.map((c) => <option key={c.id}>{c.name}</option>)}</select></div>
-        <div className="field"><label>Source</label><select><option>Lien Google Drive (catalogue)</option><option>Upload vers Cloudflare R2</option></select></div>
-        <div className="field"><label>Lien de la vidéo source</label><input placeholder="Colle ton lien Google Drive (ou R2)" /></div>
-        <div className="field"><label>Durée (optionnel)</label><input placeholder="Ex. 1:32" /></div>
-        <button className="btn btn-pri" style={{ marginTop: 18, padding: 14 }} onClick={() => { closeSheet(); showToast("Asset ajouté au catalogue"); }}>Ajouter au catalogue</button>
-      </>
-    );
+    setSheet(<ImportAssetForm campaigns={catalog.campaigns} onCancel={closeSheet} onCreated={() => { closeSheet(); showToast("Asset ajouté au catalogue"); catalog.reload(); }} />);
   }
 
   // ── gating auth ──
@@ -214,7 +227,7 @@ export default function AppShell() {
       ];
   const mobileLinks: NavLink[] = adm ? [navLinks[0], navLinks[1], navLinks[2], navLinks[7]] : navLinks.slice(0, 4);
   const fabLabel = adm ? "Importer un asset" : "Soumettre un clip";
-  const fabAction = adm ? openImport : openSubmit;
+  const fabAction = adm ? () => openImport() : () => openSubmit();
 
   // sélecteur d'aperçu : visible uniquement pour le staff
   const PreviewSwitch = () => (
@@ -251,8 +264,8 @@ export default function AppShell() {
           <button className="logout" onClick={logout}>Quitter</button>
         </div>
         {role === "clip"
-          ? <Clipper tab={tab} camp={camp} clipDetail={clipDetail} clips={clips} userName={profile.display_name || session.user.email} userEmail={session.user.email} userId={session.user.id} reloadProfile={loadProfile} actions={clipActions} />
-          : <Admin tab={tab} actions={admActions} userName={profile.display_name || session.user.email} clipperId={admClipper} payClipper={payClipper} />}
+          ? <Clipper tab={tab} camp={camp} clipDetail={clipDetail} clips={clips} catalog={catalog} userName={profile.display_name || session.user.email} userEmail={session.user.email} userId={session.user.id} reloadProfile={loadProfile} actions={clipActions} />
+          : <Admin tab={tab} actions={admActions} catalog={catalog} userName={profile.display_name || session.user.email} clipperId={admClipper} payClipper={payClipper} />}
       </div>
 
       {/* ── nav du bas (mobile) ── */}
@@ -282,5 +295,106 @@ export default function AppShell() {
 
       {toast && <div className="toast"><span className="ck">✓</span>{toast}</div>}
     </div>
+  );
+}
+
+/* ─────────── Formulaire : nouvelle campagne (écriture réelle) ─────────── */
+const GRADS = [
+  "linear-gradient(135deg,#2DE2E6,#8B6CFF)",
+  "linear-gradient(135deg,#8B6CFF,#AB8DFF)",
+  "linear-gradient(135deg,#FF6A45,#FFB23E)",
+  "linear-gradient(135deg,#35E6A1,#2DE2E6)",
+  "linear-gradient(135deg,#FF5C8A,#FF6A45)",
+];
+
+function NewCampaignForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: () => void }) {
+  const [name, setName] = useState("");
+  const [desc, setDesc] = useState("");
+  const [rate, setRate] = useState("1,2");
+  const [accent, setAccent] = useState(GRADS[0]);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function create() {
+    if (!name.trim()) { setErr("Donne un nom à la campagne."); return; }
+    const rateNum = parseFloat(rate.replace(",", "."));
+    if (!isFinite(rateNum) || rateNum <= 0) { setErr("Tarif invalide (ex. 1,2)."); return; }
+    setBusy(true); setErr(null);
+    const { error } = await getSupabase().from("campaigns").insert({
+      name: name.trim(), description: desc.trim() || null, rate_per_1000: rateNum, accent,
+    });
+    setBusy(false);
+    if (error) { setErr(error.message); return; }
+    onCreated();
+  }
+
+  return (
+    <>
+      <h3>Nouvelle campagne</h3>
+      <p style={{ color: "var(--mut)", fontSize: 13 }}>Un axe de contenu permanent (lifestyle, coaching…).</p>
+      <div className="field"><label>Nom</label><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex. Lifestyle" /></div>
+      <div className="field"><label>Description</label><input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Quotidien, voyages…" /></div>
+      <div className="field"><label>Tarif (€ / 1000 vues)</label><input value={rate} onChange={(e) => setRate(e.target.value)} placeholder="Ex. 1,2" /></div>
+      <div className="field"><label>Couleur</label>
+        <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
+          {GRADS.map((g) => (
+            <button key={g} onClick={() => setAccent(g)} aria-label="couleur"
+              style={{ width: 34, height: 34, borderRadius: 9, background: g, cursor: "pointer",
+                border: accent === g ? "2px solid var(--text)" : "2px solid transparent" }} />
+          ))}
+        </div>
+      </div>
+      <button className="btn btn-pri" style={{ marginTop: 18, padding: 14 }} onClick={create} disabled={busy}>{busy ? "Création…" : "Créer la campagne"}</button>
+      <button className="btn btn-gh" style={{ marginTop: 9, padding: 12 }} onClick={onCancel}>Annuler</button>
+      {err && <div className="auth-err">{err}</div>}
+    </>
+  );
+}
+
+/* ─────────── Formulaire : importer un asset (écriture réelle) ─────────── */
+function ImportAssetForm({ campaigns, onCancel, onCreated }: { campaigns: import("@/lib/catalog").CampaignReal[]; onCancel: () => void; onCreated: () => void }) {
+  const [title, setTitle] = useState("");
+  const [campaignId, setCampaignId] = useState(campaigns[0]?.id ?? "");
+  const [source, setSource] = useState<"drive" | "r2">("drive");
+  const [storageUrl, setStorageUrl] = useState("");
+  const [duration, setDuration] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function create() {
+    if (!title.trim()) { setErr("Donne un titre à l'asset."); return; }
+    if (!campaignId) { setErr("Choisis une campagne (crées-en une d'abord si besoin)."); return; }
+    if (!storageUrl.trim()) { setErr("Colle le lien de la vidéo source (Drive ou R2)."); return; }
+    setBusy(true); setErr(null);
+    const { error } = await getSupabase().from("assets").insert({
+      campaign_id: campaignId, title: title.trim(), duration: duration.trim() || null,
+      storage_url: storageUrl.trim(), source,
+    });
+    setBusy(false);
+    if (error) { setErr(error.message); return; }
+    onCreated();
+  }
+
+  return (
+    <>
+      <h3>Importer un asset</h3>
+      <p style={{ color: "var(--mut)", fontSize: 13 }}>Le fichier vit sur R2 (egress gratuit) ou reste pointé sur le Drive. Jamais dans GitHub.</p>
+      <div className="field"><label>Titre</label><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Ex. Routine du matin" /></div>
+      <div className="field"><label>Campagne</label>
+        <select value={campaignId} onChange={(e) => setCampaignId(e.target.value)}>
+          {campaigns.length === 0 && <option value="">Aucune campagne — crées-en une d'abord</option>}
+          {campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select></div>
+      <div className="field"><label>Source</label>
+        <select value={source} onChange={(e) => setSource(e.target.value as "drive" | "r2")}>
+          <option value="drive">Lien Google Drive (catalogue)</option>
+          <option value="r2">Lien Cloudflare R2</option>
+        </select></div>
+      <div className="field"><label>Lien de la vidéo source</label><input value={storageUrl} onChange={(e) => setStorageUrl(e.target.value)} placeholder="Colle ton lien Google Drive (ou R2)" /></div>
+      <div className="field"><label>Durée (optionnel)</label><input value={duration} onChange={(e) => setDuration(e.target.value)} placeholder="Ex. 1:32" /></div>
+      <button className="btn btn-pri" style={{ marginTop: 18, padding: 14 }} onClick={create} disabled={busy}>{busy ? "Ajout…" : "Ajouter au catalogue"}</button>
+      <button className="btn btn-gh" style={{ marginTop: 9, padding: 12 }} onClick={onCancel}>Annuler</button>
+      {err && <div className="auth-err">{err}</div>}
+    </>
   );
 }
