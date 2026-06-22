@@ -180,8 +180,8 @@ function Bilan({ clips }: { clips: MyClip[] }) {
   );
 }
 
-export default function Clipper({ tab, camp, clips, actions }: {
-  tab: string; camp: string | null; clips: MyClip[]; actions: ClipActions;
+export default function Clipper({ tab, camp, clips, actions, userName }: {
+  tab: string; camp: string | null; clips: MyClip[]; actions: ClipActions; userName?: string | null;
 }) {
   let screen: React.ReactNode;
   if (tab === "camp") screen = <Campaigns camp={camp} actions={actions} />;
@@ -191,7 +191,7 @@ export default function Clipper({ tab, camp, clips, actions }: {
 
   return (
     <>
-      <Hud name="Léa" sub="Sergent · Niveau 7" rank="🔥 12 j de série" />
+      <Hud name={userName || "Clipper"} sub="Sergent · Niveau 7" rank="🔥 12 j de série" />
       <div className="wrap">{screen}</div>
     </>
   );

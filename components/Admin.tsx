@@ -118,7 +118,7 @@ function Fraud() {
   );
 }
 
-export default function Admin({ tab, actions }: { tab: string; actions: AdmActions }) {
+export default function Admin({ tab, actions, userName }: { tab: string; actions: AdmActions; userName?: string | null }) {
   let screen: React.ReactNode;
   if (tab === "assets") screen = <Assets actions={actions} />;
   else if (tab === "clippers") screen = <Clippers />;
@@ -127,7 +127,7 @@ export default function Admin({ tab, actions }: { tab: string; actions: AdmActio
 
   return (
     <>
-      <Hud name="Keyan" sub="Admin · War Room" rank="⚡ 24 clippers actifs" />
+      <Hud name={userName || "Keyan"} sub="Admin · War Room" rank="⚡ 24 clippers actifs" />
       <div className="wrap">{screen}</div>
     </>
   );

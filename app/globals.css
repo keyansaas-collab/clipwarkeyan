@@ -210,9 +210,14 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
 .auth-ok{font-size:13.5px;color:var(--mint);line-height:1.6}
 .auth-err{color:var(--coral);font-size:12.5px;margin-top:12px}
 
+.onb-sep{font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--mut2);
+  margin:20px 0 2px;padding-top:14px;border-top:1px solid var(--line)}
+.onb-opt{text-transform:none;letter-spacing:0;font-weight:400;color:var(--mut2)}
+
 .logo-img{height:34px;width:auto;display:block}
 .logo-img.big{height:46px}
-@media(max-width:720px){ .logo-img{height:30px} .logo-img.big{height:42px} }
+.lp-herologo{height:104px;width:auto;display:block;margin:0 auto 22px;max-width:100%}
+@media(max-width:720px){ .logo-img{height:30px} .logo-img.big{height:42px} .lp-herologo{height:68px;margin-bottom:16px} }
 
 /* ===================== LANDING ===================== */
 .lp{width:100%;max-width:1120px;margin:0 auto;padding:0 22px}

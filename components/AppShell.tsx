@@ -5,12 +5,13 @@ import { Icon } from "./ui";
 import Clipper, { ClipActions } from "./Clipper";
 import Admin, { AdmActions } from "./Admin";
 import Login from "./Login";
+import Onboarding from "./Onboarding";
 import { getSupabase } from "@/lib/supabase/client";
 import { assets, campaigns, initialClips, MyClip } from "@/lib/data";
 
 type Role = "clip" | "adm";
 type NavLink = { id: string; label: string; icon: string };
-type Profile = { display_name: string | null; role: string; rank: string | null };
+type Profile = { display_name: string | null; role: string; rank: string | null; onboarded?: boolean };
 
 export default function AppShell() {
   // ── auth ──
@@ -33,16 +34,18 @@ export default function AppShell() {
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  // charge le profil (donc le rôle réel) une fois connecté
-  useEffect(() => {
+  // charge le profil (rôle + onboarding) ; réutilisable après la fiche
+  const loadProfile = React.useCallback(() => {
     if (!session) { setProfile(null); return; }
     getSupabase()
       .from("profiles")
-      .select("display_name, role, rank")
+      .select("display_name, role, rank, onboarded")
       .eq("id", session.user.id)
       .maybeSingle()
-      .then(({ data }) => setProfile((data as Profile) ?? { display_name: null, role: "clipper", rank: null }));
+      .then(({ data }) => setProfile((data as Profile) ?? { display_name: null, role: "clipper", rank: null, onboarded: false }));
   }, [session]);
+
+  useEffect(() => { loadProfile(); }, [loadProfile]);
 
   const isStaff = profile?.role === "admin" || profile?.role === "owner";
 
@@ -135,6 +138,20 @@ export default function AppShell() {
   }
   if (!session) return <Login />;
 
+  if (!profile) {
+    return (
+      <div className="shell">
+        <div className="auth-wrap">
+          <img className="logo-img big" src="/clipwar-logo.png" alt="ClipWar" style={{ margin: "0 auto" }} />
+          <div className="auth-sub" style={{ marginTop: 12 }}>Chargement…</div>
+        </div>
+      </div>
+    );
+  }
+  if (!profile.onboarded && !isStaff) {
+    return <Onboarding userId={session.user.id} email={session.user.email ?? ""} initialName={profile.display_name} onDone={loadProfile} />;
+  }
+
   // ── app connectée ──
   const clipActions: ClipActions = { go, openCamp, openSubmit, openDownload };
   const admActions: AdmActions = { go, openImport };
@@ -181,8 +198,8 @@ export default function AppShell() {
           <button className="logout" onClick={logout}>Quitter</button>
         </div>
         {role === "clip"
-          ? <Clipper tab={tab} camp={camp} clips={clips} actions={clipActions} />
-          : <Admin tab={tab} actions={admActions} />}
+          ? <Clipper tab={tab} camp={camp} clips={clips} actions={clipActions} userName={profile.display_name || session.user.email} />
+          : <Admin tab={tab} actions={admActions} userName={profile.display_name || session.user.email} />}
       </div>
 
       {/* ── nav du bas (mobile) ── */}

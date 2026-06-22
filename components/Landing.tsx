@@ -57,6 +57,7 @@ export default function Landing() {
       </nav>
 
       <header className="lp-hero">
+        <img className="lp-herologo" src="/clipwar-logo.png" alt="ClipWar" />
         <div className="lp-eyebrow"><span className="dot" /> La plateforme des armées de clippers</div>
         <h1 className="lp-h1">L'armée de clippers qui fait <span className="g">exploser tes vues</span>.</h1>
         <p className="lp-lead">
