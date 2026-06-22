@@ -116,3 +116,31 @@ export const clippersFull: ClipperRow[] = [
 export const views7days = [820000, 940000, 760000, 1120000, 1340000, 980000, 1450000];
 export const dayLabels = ["L", "M", "M", "J", "V", "S", "D"];
 export const aVerserTotal = clippersFull.reduce((s, c) => s + c.gain, 0);
+
+// ─────────── CLIPS DÉTAILLÉS (maquette) ───────────
+export type AdminClip = {
+  id: string; clipperId: string; clipperName: string; asset: string; campaign: string;
+  platform: "tiktok" | "instagram" | "youtube"; url: string;
+  vues: number; d7: number; st: ClipStatus; postedDaysAgo: number;
+};
+
+export const adminClips: AdminClip[] = [
+  { id: "k4", clipperId: "cl2", clipperName: "Léa M.", asset: "Routine matinale 5h", campaign: "life", platform: "tiktok", url: "https://www.tiktok.com/@leaclips/video/7546905555512340", vues: 184000, d7: 42000, st: "track", postedDaysAgo: 0 },
+  { id: "k9", clipperId: "cl5", clipperName: "Nael K.", asset: "(contenu original)", campaign: "life", platform: "tiktok", url: "https://www.tiktok.com/@naelk/video/7546903333312340", vues: 38000, d7: 12000, st: "track", postedDaysAgo: 0 },
+  { id: "k3", clipperId: "cl1", clipperName: "Theo R.", asset: "Mindset du closing", campaign: "coach", platform: "instagram", url: "https://www.instagram.com/reel/C9xKvtABcDe/", vues: 96000, d7: -2000, st: "hold", postedDaysAgo: 1 },
+  { id: "k6", clipperId: "cl3", clipperName: "Sofia B.", asset: "La règle des 3 piliers", campaign: "coach", platform: "tiktok", url: "https://www.tiktok.com/@sofiab/video/7546908888812340", vues: 142000, d7: 31000, st: "track", postedDaysAgo: 1 },
+  { id: "k12", clipperId: "cl4", clipperName: "Inès D.", asset: "Mindset du closing", campaign: "coach", platform: "tiktok", url: "https://www.tiktok.com/@inesd/video/7546907777712340", vues: 54000, d7: -800, st: "hold", postedDaysAgo: 1 },
+  { id: "k1", clipperId: "cl1", clipperName: "Theo R.", asset: "Pourquoi 99% échouent", campaign: "biz", platform: "tiktok", url: "https://www.tiktok.com/@theoclips/video/7546901234567890", vues: 412000, d7: 88000, st: "track", postedDaysAgo: 2 },
+  { id: "k7", clipperId: "cl4", clipperName: "Inès D.", asset: "1 an pour 100k€", campaign: "biz", platform: "tiktok", url: "https://www.tiktok.com/@inesd/video/7546901111122340", vues: 260000, d7: 54000, st: "track", postedDaysAgo: 2 },
+  { id: "k5", clipperId: "cl2", clipperName: "Léa M.", asset: "Sortie Dubaï vlog", campaign: "life", platform: "instagram", url: "https://www.instagram.com/reel/C9zLeaDubai/", vues: 64000, d7: 9000, st: "track", postedDaysAgo: 3 },
+  { id: "k14", clipperId: "cl3", clipperName: "Sofia B.", asset: "Sortie Dubaï vlog", campaign: "life", platform: "instagram", url: "https://www.instagram.com/reel/C9SofiaDub/", vues: 76000, d7: 11000, st: "track", postedDaysAgo: 3 },
+  { id: "k8", clipperId: "cl4", clipperName: "Inès D.", asset: "Routine matinale 5h", campaign: "life", platform: "youtube", url: "https://www.youtube.com/shorts/dQw4w9WgXcQ", vues: 120000, d7: 18000, st: "track", postedDaysAgo: 4 },
+  { id: "k2", clipperId: "cl1", clipperName: "Theo R.", asset: "1 an pour 100k€", campaign: "biz", platform: "youtube", url: "https://www.youtube.com/shorts/aV5Svd6Y4Zc", vues: 208000, d7: 24000, st: "track", postedDaysAgo: 5 },
+  { id: "k15", clipperId: "cl5", clipperName: "Nael K.", asset: "1 an pour 100k€", campaign: "biz", platform: "youtube", url: "https://www.youtube.com/shorts/L_jWHffIx5E", vues: 22000, d7: 3000, st: "track", postedDaysAgo: 5 },
+  { id: "k10", clipperId: "cl6", clipperName: "Marco T.", asset: "Routine matinale 5h", campaign: "life", platform: "instagram", url: "https://www.instagram.com/reel/C9MarcoRt/", vues: 24000, d7: 7000, st: "track", postedDaysAgo: 6 },
+  { id: "k11", clipperId: "cl1", clipperName: "Theo R.", asset: "Pourquoi 99% échouent", campaign: "biz", platform: "instagram", url: "https://www.instagram.com/reel/C9TheoBiz/", vues: 88000, d7: 15000, st: "track", postedDaysAgo: 7 },
+  { id: "k13", clipperId: "cl2", clipperName: "Léa M.", asset: "La règle des 3 piliers", campaign: "coach", platform: "youtube", url: "https://www.youtube.com/shorts/3JZ_D3ELwOQ", vues: 31000, d7: 4000, st: "paid", postedDaysAgo: 9 },
+];
+
+export const agoLabel = (d: number) => (d === 0 ? "aujourd'hui" : d === 1 ? "hier" : `il y a ${d} j`);
+export const platLabel: Record<string, string> = { tiktok: "TikTok", instagram: "Instagram", youtube: "YouTube" };

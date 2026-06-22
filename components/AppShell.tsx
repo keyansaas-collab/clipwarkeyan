@@ -189,6 +189,7 @@ export default function AppShell() {
     ? [
         { id: "dash", label: "Dashboard", icon: "home" },
         { id: "clippers", label: "Clippers", icon: "user" },
+        { id: "clips", label: "Clips", icon: "clip" },
         { id: "campaigns", label: "Campagnes", icon: "folder" },
         { id: "challenges", label: "Challenges", icon: "trophy" },
         { id: "assets", label: "Assets", icon: "grid" },
@@ -196,7 +197,7 @@ export default function AppShell() {
         { id: "pay", label: "Paiements", icon: "wallet" },
       ]
     : [{ id: "home", label: "Accueil", icon: "home" }, { id: "camp", label: "Campagnes", icon: "grid" }, { id: "clips", label: "Mes clips", icon: "clip" }, { id: "bilan", label: "Bilan", icon: "chart" }];
-  const mobileLinks: NavLink[] = adm ? [navLinks[0], navLinks[1], navLinks[3], navLinks[5]] : navLinks;
+  const mobileLinks: NavLink[] = adm ? [navLinks[0], navLinks[1], navLinks[2], navLinks[7]] : navLinks;
   const fabLabel = adm ? "Importer un asset" : "Soumettre un clip";
   const fabAction = adm ? openImport : openSubmit;
 

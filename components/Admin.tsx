@@ -1,8 +1,11 @@
-import React from "react";
+"use client";
+
+import React, { useState } from "react";
 import { Hud, Icon } from "./ui";
 import {
   campaigns, assets, challenges, clippersFull, alerts, views7days, dayLabels, aVerserTotal,
-  campName, campGrad, initials, fmt, euro, Asset, ClipperRow,
+  adminClips, agoLabel, platLabel,
+  campName, campGrad, initials, fmt, euro, Asset, ClipperRow, AdminClip,
 } from "@/lib/data";
 
 export type AdmActions = {
@@ -38,6 +41,68 @@ function PepiteRow({ a }: { a: Asset }) {
       </div>
       <div className="end"><div className="vue mono">{fmt(ratio)}</div><div className="delta flat">vues / dl</div></div>
     </div>
+  );
+}
+
+/* ---------- CLIP cliquable ---------- */
+function ClipRowLink({ c, showClipper }: { c: AdminClip; showClipper?: boolean }) {
+  const pill = { track: ["p-track", "En suivi"], paid: ["p-paid", "Payé"], hold: ["p-hold", "Gelé"] }[c.st];
+  return (
+    <a className="row cliprow" href={c.url} target="_blank" rel="noopener noreferrer">
+      <div className="thumb" style={{ background: "var(--surf2)", color: "var(--mut)" }}>{platLabel[c.platform][0]}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="t" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {c.asset} <span className="ext">↗</span>
+        </div>
+        <div className="s">
+          {showClipper ? c.clipperName + " · " : ""}{platLabel[c.platform]} · {agoLabel(c.postedDaysAgo)} <span className={"pill " + pill[0]} style={{ marginLeft: 4 }}>{pill[1]}</span>
+        </div>
+      </div>
+      <div className="end">
+        <div className="vue">{fmt(c.vues)}</div>
+        <div className={"delta " + deltaClass(c.d7)}>{(c.d7 > 0 ? "+" : "") + fmt(c.d7)} · 7 j</div>
+      </div>
+    </a>
+  );
+}
+
+/* ---------- CLIPS (flux + filtres + tri) ---------- */
+function ClipsFeed() {
+  const [plat, setPlat] = useState("all");
+  const [camp, setCamp] = useState("all");
+  const [stat, setStat] = useState("all");
+  const [sort, setSort] = useState("date");
+
+  let list = adminClips.filter((c) =>
+    (plat === "all" || c.platform === plat) &&
+    (camp === "all" || c.campaign === camp) &&
+    (stat === "all" || c.st === stat)
+  );
+  list = [...list].sort((a, b) => (sort === "vues" ? b.vues - a.vues : a.postedDaysAgo - b.postedDaysAgo));
+
+  return (
+    <>
+      <div className="eyebrow" style={{ marginTop: 14 }}>Flux des publications</div>
+      <h2 className="display" style={{ fontSize: 22, margin: "4px 0 6px" }}>Clips</h2>
+      <div className="adm-filters">
+        <select value={plat} onChange={(e) => setPlat(e.target.value)}>
+          <option value="all">Toutes plateformes</option><option value="tiktok">TikTok</option><option value="instagram">Instagram</option><option value="youtube">YouTube</option>
+        </select>
+        <select value={camp} onChange={(e) => setCamp(e.target.value)}>
+          <option value="all">Toutes campagnes</option>{campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        <select value={stat} onChange={(e) => setStat(e.target.value)}>
+          <option value="all">Tous statuts</option><option value="track">En suivi</option><option value="paid">Payé</option><option value="hold">Gelé</option>
+        </select>
+        <select value={sort} onChange={(e) => setSort(e.target.value)}>
+          <option value="date">Trier : récent</option><option value="vues">Trier : vues</option>
+        </select>
+      </div>
+      <div style={{ fontSize: 12, color: "var(--mut)", margin: "2px 2px 8px" }}>{list.length} clip{list.length > 1 ? "s" : ""}</div>
+      <div className="card">
+        {list.length ? list.map((c) => <ClipRowLink key={c.id} c={c} showClipper />) : <div className="empty">Aucun clip pour ces filtres.</div>}
+      </div>
+    </>
   );
 }
 
@@ -139,19 +204,7 @@ function ClipperDetail({ c, actions }: { c: ClipperRow; actions: AdmActions }) {
 
       <div className="sec-h"><h2>Ses clips</h2></div>
       <div className="card">
-        {c.recent.map((r, i) => {
-          const pill = { track: ["p-track", "En suivi"], paid: ["p-paid", "Payé"], hold: ["p-hold", "Gelé"] }[r.st];
-          return (
-            <div className="row" key={i}>
-              <div className="thumb" style={{ background: "var(--surf2)", color: "var(--mut)" }}>{r.plat[0]}</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="t" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.asset}</div>
-                <div className="s">{r.plat} · <span className={deltaClass(r.d7)}>{(r.d7 > 0 ? "+" : "") + fmt(r.d7)} · 7 j</span></div>
-              </div>
-              <div className="end"><div className="vue">{fmt(r.vues)}</div><span className={"pill " + pill[0]} style={{ marginTop: 4, display: "inline-block" }}>{pill[1]}</span></div>
-            </div>
-          );
-        })}
+        {adminClips.filter((k) => k.clipperId === c.id).sort((a, b) => a.postedDaysAgo - b.postedDaysAgo).map((k) => <ClipRowLink key={k.id} c={k} />)}
       </div>
 
       <div className="sec-h"><h2>Paiement</h2></div>
@@ -306,6 +359,7 @@ export default function Admin({ tab, actions, userName, clipperId }: {
     const c = clipperId ? clippersFull.find((x) => x.id === clipperId) : null;
     screen = c ? <ClipperDetail c={c} actions={actions} /> : <Clippers actions={actions} />;
   } else if (tab === "campaigns") screen = <Campaigns actions={actions} />;
+  else if (tab === "clips") screen = <ClipsFeed />;
   else if (tab === "challenges") screen = <Challenges actions={actions} />;
   else if (tab === "assets") screen = <AssetsScreen actions={actions} />;
   else if (tab === "fraud") screen = <Fraud />;

@@ -289,6 +289,14 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
 .adm-minor{font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:99px;background:rgba(255,178,62,.15);color:var(--amber)}
 .adm-major{font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:99px;background:rgba(53,230,161,.12);color:var(--mint)}
 .adm-actionbtn{width:auto;padding:9px 14px}
+a.cliprow{text-decoration:none;color:inherit;transition:background .12s}
+a.cliprow:hover{background:rgba(139,108,255,.06)}
+a.cliprow:hover .t{color:var(--violet2)}
+.ext{color:var(--mut2);font-size:11px}
+.adm-filters{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 2px}
+.adm-filters select{background:var(--bg2);border:1px solid var(--line2);color:var(--text);
+  border-radius:9px;padding:8px 10px;font-size:12.5px;font-family:inherit;outline:none;cursor:pointer}
+.adm-filters select:focus{border-color:var(--violet)}
 
 @media(max-width:720px){
   .lp-h1{font-size:33px}
