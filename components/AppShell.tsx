@@ -6,8 +6,9 @@ import Clipper, { ClipActions } from "./Clipper";
 import Admin, { AdmActions } from "./Admin";
 import Login from "./Login";
 import Onboarding from "./Onboarding";
+import SubmitSheet from "./SubmitSheet";
 import { getSupabase } from "@/lib/supabase/client";
-import { assets, campaigns, initialClips, MyClip } from "@/lib/data";
+import { campaigns, platLabel, MyClip } from "@/lib/data";
 
 type Role = "clip" | "adm";
 type NavLink = { id: string; label: string; icon: string };
@@ -23,7 +24,7 @@ export default function AppShell() {
   const [tab, setTab] = useState("home");
   const [camp, setCamp] = useState<string | null>(null);
   const [admClipper, setAdmClipper] = useState<string | null>(null);
-  const [clips, setClips] = useState<MyClip[]>(initialClips);
+  const [clips, setClips] = useState<MyClip[]>([]);
   const [sheet, setSheet] = useState<React.ReactNode>(null);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -58,18 +59,38 @@ export default function AppShell() {
     setCamp(null);
   }, [profile?.role]);
 
-  // compteurs de vues en direct
-  useEffect(() => {
-    if (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion:reduce)").matches) return;
-    const id = setInterval(() => {
-      setClips((prev) => prev.map((c) =>
-        c.st === "track" && c.d7 >= 0 && Math.random() > 0.45
-          ? { ...c, vues: c.vues + Math.floor(Math.random() * 120) }
-          : c
-      ));
-    }, 2200);
-    return () => clearInterval(id);
-  }, []);
+  // charge les vrais clips du clipper (+ vues depuis les snapshots du cron)
+  const loadClips = React.useCallback(async () => {
+    if (!session) { setClips([]); return; }
+    const sb = getSupabase();
+    const { data: rows } = await sb
+      .from("clips")
+      .select("id, platform, url, status, asset_id, assets(title)")
+      .eq("clipper_id", session.user.id)
+      .order("submitted_at", { ascending: false });
+    const ids = (rows || []).map((r: any) => r.id);
+    let snaps: any[] = [];
+    if (ids.length) {
+      const { data } = await sb
+        .from("view_snapshots")
+        .select("clip_id, views, captured_at")
+        .in("clip_id", ids)
+        .order("captured_at", { ascending: false });
+      snaps = data || [];
+    }
+    const weekAgo = Date.now() - 7 * 864e5;
+    const mapped: MyClip[] = (rows || []).map((r: any) => {
+      const s = snaps.filter((x) => x.clip_id === r.id);
+      const cur = s[0] ? s[0].views : 0;
+      const base = s.find((x) => new Date(x.captured_at).getTime() <= weekAgo);
+      const net = Math.max(0, cur - (base ? base.views : 0));
+      const a = Array.isArray(r.assets) ? r.assets[0] : r.assets;
+      return { id: r.id, asset: a?.title || "(contenu original)", plat: platLabel[r.platform] || r.platform, vues: cur, d7: net, st: (r.status === "rejected" ? "hold" : r.status) };
+    });
+    setClips(mapped);
+  }, [session]);
+
+  useEffect(() => { loadClips(); }, [loadClips]);
 
   function showToast(msg: string) { setToast(msg); window.setTimeout(() => setToast(null), 2400); }
   function go(t: string) { setTab(t); setCamp(null); setAdmClipper(null); window.scrollTo(0, 0); }
@@ -90,24 +111,8 @@ export default function AppShell() {
     );
   }
   function openSubmit() {
-    setSheet(
-      <>
-        <h3>Soumettre un clip</h3>
-        <p style={{ color: "var(--mut)", fontSize: 13 }}>On suit ses vues automatiquement dès l&apos;ajout.</p>
-        <div className="field"><label>Lien du clip</label><input placeholder="https://tiktok.com/@..." /></div>
-        <div className="field"><label>Plateforme</label><select><option>TikTok</option><option>Instagram</option><option>YouTube</option></select></div>
-        <div className="field">
-          <label>Asset utilisé</label>
-          <select>
-            <option>Pourquoi 99% échouent</option>
-            {assets.map((a) => <option key={a.id}>{a.t}</option>)}
-            <option>Aucun / contenu original</option>
-          </select>
-          <div className="prefill">✓ Pré-rempli avec ton dernier téléchargement — change si besoin.</div>
-        </div>
-        <button className="btn btn-pri" style={{ marginTop: 18, padding: 14 }} onClick={addClip}>Soumettre le clip</button>
-      </>
-    );
+    if (!session) return;
+    setSheet(<SubmitSheet clipperId={session.user.id} onDone={() => { closeSheet(); showToast("Clip soumis · suivi lancé"); loadClips(); go("clips"); }} />);
   }
   function openClipper(id: string) { setTab("clippers"); setAdmClipper(id); window.scrollTo(0, 0); }
   function openNewChallenge() {
@@ -147,10 +152,6 @@ export default function AppShell() {
         <button className="btn btn-pri" style={{ marginTop: 18, padding: 14 }} onClick={() => { closeSheet(); showToast("Asset ajouté au catalogue"); }}>Ajouter au catalogue</button>
       </>
     );
-  }
-  function addClip() {
-    setClips((prev) => [{ id: "n" + Date.now(), asset: "Pourquoi 99% échouent", plat: "TikTok", vues: 0, d7: 0, st: "track" }, ...prev]);
-    closeSheet(); showToast("Clip ajouté · suivi des vues lancé"); go("clips");
   }
 
   // ── gating auth ──
@@ -245,7 +246,7 @@ export default function AppShell() {
         {mobileLinks.map((it, i) => (
           <React.Fragment key={it.id}>
             {i === 2 && (
-              <div className="nav mid" style={{ background: "none", border: "none", position: "static" }}>
+              <div className="mid">
                 <div className={"fab " + (adm ? "adm" : "")} onClick={fabAction}><Icon name="plus" /></div>
               </div>
             )}
