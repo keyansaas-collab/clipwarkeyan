@@ -155,3 +155,35 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
 .toast .ck{color:var(--mint)}
 
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ===================== DESKTOP ===================== */
+.main{display:flex;flex-direction:column;min-width:0;flex:1}
+.side{display:none}
+.brand{font-family:"Space Grotesk",sans-serif;font-weight:700;font-size:18px;
+  display:flex;align-items:baseline;gap:8px;padding:4px 8px 8px}
+.brand span{font-size:10px;color:var(--mut2);font-weight:600;letter-spacing:1.5px;text-transform:uppercase}
+.side-action{margin:10px 0 6px}
+.side-nav{display:flex;flex-direction:column;gap:2px;margin-top:10px}
+.side-link{display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:11px;
+  color:var(--mut);font-weight:600;font-size:14px;cursor:pointer;text-decoration:none;transition:.15s}
+.side-link svg{width:20px;height:20px;flex-shrink:0;stroke:currentColor;fill:none}
+.side-link:hover{background:var(--surf);color:var(--text)}
+.side-link.on{background:var(--surf2);color:var(--text)}
+.side-link.on.adm{color:var(--coral)}
+
+@media(min-width:880px){
+  .shell{flex-direction:row;max-width:1180px;border:1px solid var(--line)}
+  .side{display:flex;flex-direction:column;width:248px;flex-shrink:0;
+    border-right:1px solid var(--line);padding:20px 14px;position:sticky;top:0;height:100dvh}
+  .side .role{margin:6px 0 0}
+  .role.mobile-only{display:none}
+  .nav.mobile-only{display:none}
+  .hud{max-width:960px;width:100%;margin:0 auto;padding:24px 32px 6px}
+  .wrap{max-width:960px;width:100%;margin:0 auto;padding:6px 32px 60px}
+  .grid{grid-template-columns:repeat(3,1fr)}
+  .scrim{align-items:center}
+  .sheet{max-width:460px;border-radius:18px;animation:none}
+}
+@media(min-width:1180px){
+  .shell{border-radius:0}
+}
