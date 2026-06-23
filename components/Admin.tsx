@@ -3,8 +3,9 @@
 import React, { useState } from "react";
 import { Hud } from "./ui";
 import { getSupabase } from "@/lib/supabase/client";
-import { fmt, euro, platLabel, agoLabel, challenges } from "@/lib/data";
+import { fmt, euro, platLabel, agoLabel } from "@/lib/data";
 import { Catalog, AssetReal, campNameOf, campGradOf, initialsOf } from "@/lib/catalog";
+import { Arena, ArenaChallenge, endsLabel, rewardText, metricLabel, kindLabel, fetchChallengeBoard, awardChallenge } from "@/lib/arena";
 import {
   useAdminData, AdminData, AdmClipper, AdmClip, AdmAsset, AdmViewDay,
   fraudLabel, fraudIcon,
@@ -16,6 +17,7 @@ export type AdmActions = {
   openClipper: (id: string) => void;
   openNewChallenge: () => void;
   openNewCampaign: () => void;
+  openEditCampaign: (c: import("@/lib/catalog").CampaignReal) => void;
   openPayVerify: (id: string) => void;
   showToast: (m: string) => void;
 };
@@ -162,7 +164,7 @@ function Dash({ data, catalog, isOwner, actions }: { data: AdminData; catalog: C
       )}
       <div className="adm-kpis">
         <div className="adm-kpi"><div className="v gr">{data.dash.vues_7 >= 1e6 ? (Math.round(data.dash.vues_7 / 1e5) / 10) + "M" : fmt(data.dash.vues_7)}</div><div className="l">vues nettes · 7 j</div></div>
-        <div className="adm-kpi"><div className="v">{euro(data.dash.a_verser)}</div><div className="l">à verser (est.)</div></div>
+        <div className="adm-kpi"><div className="v">{euro(data.dash.a_verser)}</div><div className="l">dû en attente</div></div>
         <div className="adm-kpi"><div className="v">{data.dash.clippers_actifs}</div><div className="l">clippers actifs</div></div>
         <div className="adm-kpi"><div className="v">{data.dash.pubs_7}</div><div className="l">pubs · 7 j</div></div>
       </div>
@@ -290,7 +292,7 @@ function Campaigns({ catalog, actions }: { catalog: Catalog; actions: AdmActions
         <div className="card" style={{ marginTop: 12 }}><div className="empty">Aucune campagne. Crée la première avec « + Nouvelle ».</div></div>
       )}
       {catalog.campaigns.map((c) => (
-        <div className="card" key={c.id} style={{ marginTop: 12 }}>
+        <div className="card" key={c.id} style={{ marginTop: 12, cursor: "pointer" }} onClick={() => actions.openEditCampaign(c)}>
           <div style={{ display: "flex", alignItems: "center", gap: 13 }}>
             <div className="thumb" style={{ background: c.accent }}>{initialsOf(c.name)}</div>
             <div style={{ flex: 1 }}>
@@ -303,32 +305,100 @@ function Campaigns({ catalog, actions }: { catalog: Catalog; actions: AdmActions
             <div className="adm-kpi"><div className="v">{c.assetCount}</div><div className="l">assets</div></div>
             <div className="adm-kpi"><div className="v">{c.clipCount}</div><div className="l">clips soumis</div></div>
           </div>
+          <div style={{ fontSize: 11, color: "var(--mut2)", marginTop: 8, textAlign: "right" }}>Touche pour modifier ›</div>
         </div>
       ))}
     </>
   );
 }
 
-/* ───────────── CHALLENGES (cartes maquette · classement réel) ───────────── */
-function Challenges({ data, actions }: { data: AdminData; actions: AdmActions }) {
-  const top = [...data.clippers].sort((a, b) => b.vues_7 - a.vues_7).slice(0, 4);
+/* ───────────── CHALLENGES (réels v2) ───────────── */
+function AdminChallengeCard({ ch, onChanged, actions }: { ch: ArenaChallenge; onChanged: () => void; actions: AdmActions }) {
+  const [mode, setMode] = useState<"idle" | "confirmDel" | "close">("idle");
+  const [busy, setBusy] = useState(false);
+  const [board, setBoard] = useState<{ clipper_id: string; name: string; score: number }[] | null>(null);
+  const pct = ch.goal_views ? Math.min(100, Math.round((ch.progress / ch.goal_views) * 100)) : 0;
+  const unit = ch.metric === "clips" ? "clips" : "vues";
+
+  async function openClose() {
+    setMode("close"); setBoard(null);
+    setBoard(await fetchChallengeBoard(ch.id));
+  }
+  async function award(winner: string | null) {
+    setBusy(true);
+    await awardChallenge(ch.id, winner);
+    setBusy(false); setMode("idle"); onChanged();
+    actions.showToast(winner ? "Gagnant désigné · prime à remettre" : "Challenge clôturé");
+  }
+  async function del() {
+    setBusy(true);
+    await getSupabase().from("challenges").delete().eq("id", ch.id);
+    setBusy(false); onChanged();
+  }
+
+  return (
+    <div className={"chal " + (ch.kind === "collectif" ? "c2" : "")} style={{ minWidth: 0, marginTop: 12, opacity: ch.active ? 1 : 0.72 }}>
+      <span className="badge"><span className="dot" />{ch.awarded_at ? "Clôturé" : ch.active ? endsLabel(ch.ends_at) : "Terminé"}</span>
+      <h3>{ch.title}</h3>
+      <div className="meta">{kindLabel[ch.kind]} · {metricLabel[ch.metric]}{ch.campaign_name ? " · " + ch.campaign_name : " · toutes campagnes"} · {ch.participants} clipper{ch.participants > 1 ? "s" : ""}</div>
+
+      <div style={{ margin: "8px 0 4px" }}><span className="pill p-paid">🎁 {rewardText(ch)}</span></div>
+
+      {ch.metric !== "manual" && ch.goal_views ? (
+        <>
+          <div className="bar"><i style={{ width: pct + "%" }} /></div>
+          <div className="reward">{fmt(ch.progress)} / {fmt(ch.goal_views)} {unit} ({pct}%)</div>
+        </>
+      ) : (
+        <div className="reward">{ch.metric === "manual" ? "Jugé manuellement" : `${fmt(ch.progress)} ${unit} cumulés`}</div>
+      )}
+
+      {ch.awarded_at ? (
+        <div style={{ marginTop: 8, fontSize: 12.5 }}>
+          {ch.winner_name ? <>🏆 Gagnant : <b>{ch.winner_name}</b> — <span style={{ color: "var(--mint)" }}>prime à remettre ({rewardText(ch)})</span></> : "Clôturé sans gagnant unique."}
+        </div>
+      ) : mode === "close" ? (
+        <div style={{ marginTop: 10 }}>
+          <div style={{ fontSize: 12, color: "var(--mut)", marginBottom: 6 }}>Désigne le gagnant :</div>
+          {board === null ? <div className="empty" style={{ padding: 8 }}>Chargement…</div>
+            : board.length ? board.slice(0, 6).map((b, i) => (
+              <button key={b.clipper_id} className="btn btn-gh" style={{ padding: 10, marginBottom: 6, display: "flex", justifyContent: "space-between" }} disabled={busy} onClick={() => award(b.clipper_id)}>
+                <span>{i + 1}. {b.name}</span><span className="mono">{fmt(b.score)} {unit}</span>
+              </button>
+            )) : <div className="empty" style={{ padding: 8 }}>Aucun participant mesuré.</div>}
+          <button className="btn btn-gh" style={{ padding: 10, marginTop: 4 }} disabled={busy} onClick={() => award(null)}>Clôturer sans gagnant unique</button>
+          <button className="btn btn-gh" style={{ padding: 8, marginTop: 6, fontSize: 12 }} onClick={() => setMode("idle")}>Annuler</button>
+        </div>
+      ) : mode === "confirmDel" ? (
+        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+          <button className="btn btn-pri" style={{ padding: 8, background: "var(--coral)" }} disabled={busy} onClick={del}>Supprimer</button>
+          <button className="btn btn-gh" style={{ padding: 8 }} onClick={() => setMode("idle")}>Annuler</button>
+        </div>
+      ) : (
+        <div style={{ display: "flex", gap: 14, justifyContent: "flex-end", marginTop: 10 }}>
+          <span style={{ fontSize: 12, color: "var(--cyan)", cursor: "pointer", fontWeight: 600 }} onClick={openClose}>Clôturer &amp; primer</span>
+          <span style={{ fontSize: 12, color: "var(--mut2)", cursor: "pointer" }} onClick={() => setMode("confirmDel")}>Supprimer</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Challenges({ arena, actions }: { arena: Arena; actions: AdmActions }) {
+  const top = [...arena.board].slice(0, 4);
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14 }}>
-        <div><div className="eyebrow">Surcouches temporaires</div><h2 className="display" style={{ fontSize: 22, marginTop: 4 }}>Challenges</h2></div>
+        <div><div className="eyebrow">Courses & primes</div><h2 className="display" style={{ fontSize: 22, marginTop: 4 }}>Challenges</h2></div>
         <button className="btn btn-pri adm-actionbtn" onClick={actions.openNewChallenge}>+ Nouveau</button>
       </div>
-      <p style={{ color: "var(--mut)", fontSize: 12, margin: "4px 2px 0" }}>Cartes de démonstration — branchement réel des challenges en tranche 4.</p>
-      {challenges.map((c, i) => (
-        <div className={"chal " + c.c} key={i} style={{ minWidth: 0, marginTop: 12 }}>
-          <span className="badge"><span className="dot" />{c.sub}</span>
-          <h3>{c.t}</h3>
-          <div className="meta">{c.reward.includes("vues") ? "Objectif collectif" : "Sprint individuel"}</div>
-          <div className="bar"><i style={{ width: c.prog + "%" }} /></div>
-          <div className="reward">{c.reward}</div>
-        </div>
-      ))}
-      <div className="sec-h"><h2>Classement (vues nettes · 7 j)</h2></div>
+      {arena.loading && <div className="card" style={{ marginTop: 12 }}><div className="empty">Chargement…</div></div>}
+      {!arena.loading && arena.challenges.length === 0 && (
+        <div className="card" style={{ marginTop: 12 }}><div className="empty">Aucun challenge. Lance le premier avec « + Nouveau » — vues, clips, ou jugé à la main, avec une prime à la clé.</div></div>
+      )}
+      {arena.challenges.map((ch) => <AdminChallengeCard key={ch.id} ch={ch} actions={actions} onChanged={arena.reload} />)}
+
+      <div className="sec-h"><h2>Classement général (vues nettes · 7 j)</h2></div>
       <div className="card">
         {top.length ? top.map((c, i) => (
           <div className="row" key={c.id}>
@@ -407,15 +477,17 @@ function Fraud({ data }: { data: AdminData }) {
 /* ───────────── PAIEMENTS ───────────── */
 function Payments({ data, actions }: { data: AdminData; actions: AdmActions }) {
   const due = [...data.clippers].filter((c) => c.gain > 0).sort((a, b) => b.gain - a.gain);
+  const totalPaid = data.payments.reduce((s, p) => s + p.amount, 0);
   return (
     <>
       <div className="eyebrow" style={{ marginTop: 14 }}>Versements</div>
       <h2 className="display" style={{ fontSize: 22, margin: "4px 0 4px" }}>Paiements</h2>
       <div className="card" style={{ background: "linear-gradient(150deg,rgba(53,230,161,.12),rgba(45,226,230,.04)),var(--surf)", borderColor: "rgba(53,230,161,.25)", marginBottom: 12 }}>
-        <div style={{ fontSize: 12, color: "var(--mut)", fontWeight: 600 }}>Total à verser cette fenêtre (est.)</div>
+        <div style={{ fontSize: 12, color: "var(--mut)", fontWeight: 600 }}>Dû en attente (cumulatif réel)</div>
         <div className="display" style={{ fontSize: 34, fontWeight: 700, margin: "4px 0" }}>{euro(data.dash.a_verser)}</div>
-        <div style={{ fontSize: 12, color: "var(--mut)" }}>{due.length} clipper{due.length > 1 ? "s" : ""} · seuil 50 €</div>
+        <div style={{ fontSize: 12, color: "var(--mut)" }}>{due.length} clipper{due.length > 1 ? "s" : ""} avec un solde · {euro(totalPaid)} déjà versés au total</div>
       </div>
+      <div className="sec-h"><h2>À verser</h2></div>
       <div className="card">
         {data.loading ? <div className="empty">Chargement…</div>
           : due.length ? due.map((c) => (
@@ -427,36 +499,62 @@ function Payments({ data, actions }: { data: AdminData; actions: AdmActions }) {
                 <button className="btn btn-pri" style={{ width: "auto", padding: "8px 12px" }} onClick={() => actions.openPayVerify(c.id)}>Vérifier</button>
               </div>
             </div>
-          )) : <div className="empty">Personne au-dessus du seuil pour l&apos;instant.</div>}
+          )) : <div className="empty">Aucun solde à verser pour l&apos;instant.</div>}
+      </div>
+
+      <div className="sec-h"><h2>Historique des versements</h2></div>
+      <div className="card">
+        {data.payments.length ? data.payments.map((p) => (
+          <div className="row" key={p.id}>
+            <div className="thumb" style={{ background: "var(--surf2)", color: "var(--mut)" }}>{initialsOf(p.clipper_name || "?")}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="t">{p.clipper_name || "Clipper"}</div>
+              <div className="s">{fmt(p.net_views)} vues payées · {agoLabel(Math.max(0, Math.floor((Date.now() - new Date(p.created_at).getTime()) / 864e5)))}</div>
+            </div>
+            <div className="end"><div className="vue mono" style={{ color: "var(--mint)" }}>{euro(p.amount)}</div><div className="delta flat">payé</div></div>
+          </div>
+        )) : <div className="empty">Aucun versement enregistré pour l&apos;instant.</div>}
       </div>
     </>
   );
 }
 
 /* ───────────── VÉRIFICATION AVANT PAIEMENT ───────────── */
-function subtotal(k: AdmClip) { return (Math.max(0, k.net_7d) / 1000) * (k.rate || 1); }
 function PayClipRow({ k, excluded, reason }: { k: AdmClip; excluded?: boolean; reason?: string }) {
-  const sub = subtotal(k);
   return (
     <a className="row cliprow" href={k.url} target="_blank" rel="noopener noreferrer">
       <div className="thumb" style={{ background: "var(--surf2)", color: "var(--mut)" }}>{(platLabel[k.platform] || k.platform)[0]}</div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div className="t" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{k.asset_title || "(contenu original)"} <span className="ext">↗</span></div>
-        <div className="s">{platLabel[k.platform] || k.platform} · {fmt(Math.max(0, k.net_7d))} vues nettes {reason && <span className="pill p-hold" style={{ marginLeft: 4 }}>{reason}</span>}</div>
+        <div className="s">{platLabel[k.platform] || k.platform} · {fmt(k.due)} vues à payer {reason && <span className="pill p-hold" style={{ marginLeft: 4 }}>{reason}</span>}</div>
       </div>
       <div className="end">
-        <div className="vue" style={{ color: excluded ? "var(--mut2)" : "var(--mint)", textDecoration: excluded ? "line-through" : "none" }}>{euro(sub)}</div>
+        <div className="vue" style={{ color: excluded ? "var(--mut2)" : "var(--mint)", textDecoration: excluded ? "line-through" : "none" }}>{euro(k.gain)}</div>
       </div>
     </a>
   );
 }
 function PayVerify({ c, data, actions }: { c: AdmClipper; data: AdminData; actions: AdmActions }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   const clips = data.clips.filter((k) => k.clipper_id === c.id);
-  const sains = clips.filter((k) => k.status === "track" && k.net_7d > 0);
-  const exclus = clips.filter((k) => !(k.status === "track" && k.net_7d > 0));
-  const total = sains.reduce((s, k) => s + subtotal(k), 0);
-  const exclusTotal = exclus.reduce((s, k) => s + subtotal(k), 0);
+  const sains = clips.filter((k) => k.status === "track" && k.due > 0);
+  const exclus = clips.filter((k) => !(k.status === "track" && k.due > 0));
+  const total = sains.reduce((s, k) => s + k.gain, 0);
+  const exclusTotal = exclus.reduce((s, k) => s + k.gain, 0);
   const geles = exclus.filter((k) => k.status === "hold" || k.status === "rejected").length;
+
+  async function settle() {
+    setBusy(true); setErr(null);
+    const { data: res, error } = await getSupabase().rpc("settle_payment", { target_clipper: c.id });
+    setBusy(false);
+    if (error) { setErr(error.message); return; }
+    const row = Array.isArray(res) ? res[0] : res;
+    const amt = row ? Number(row.amount) : total;
+    actions.showToast(`${euro(amt)} versés à ${c.name} · preuve figée`);
+    await data.reload();
+    actions.go("pay");
+  }
 
   return (
     <>
@@ -467,19 +565,19 @@ function PayVerify({ c, data, actions }: { c: AdmClipper; data: AdminData; actio
       <h2 className="display" style={{ fontSize: 22, margin: "4px 0 10px" }}>{c.name}</h2>
 
       <div className="card">
-        <div className="row" style={{ paddingTop: 0 }}><div className="ck" style={{ color: "var(--mint)", fontWeight: 700 }}>✓</div><div style={{ flex: 1 }}><div className="t">{sains.length} clip{sains.length > 1 ? "s" : ""} compté{sains.length > 1 ? "s" : ""}</div><div className="s">Progression positive, vues vivantes</div></div></div>
+        <div className="row" style={{ paddingTop: 0 }}><div className="ck" style={{ color: "var(--mint)", fontWeight: 700 }}>✓</div><div style={{ flex: 1 }}><div className="t">{sains.length} clip{sains.length > 1 ? "s" : ""} compté{sains.length > 1 ? "s" : ""}</div><div className="s">Vues vivantes non encore payées</div></div></div>
         <div className="row"><div style={{ color: geles ? "var(--amber)" : "var(--mut2)", fontWeight: 700 }}>{geles ? "!" : "✓"}</div><div style={{ flex: 1 }}><div className="t">{geles} clip{geles > 1 ? "s" : ""} gelé{geles > 1 ? "s" : ""}</div><div className="s">Exclus du versement (progression négative)</div></div></div>
-        <div className="row"><div style={{ color: "var(--mint)", fontWeight: 700 }}>✓</div><div style={{ flex: 1 }}><div className="t">Aucun doublon détecté</div><div className="s">Liens vérifiés sur chaque plateforme</div></div></div>
+        <div className="row"><div style={{ color: "var(--mint)", fontWeight: 700 }}>✓</div><div style={{ flex: 1 }}><div className="t">On ne paie que le surplus</div><div className="s">Vues déjà réglées lors des versements précédents non recomptées</div></div></div>
         <div style={{ fontSize: 11.5, color: "var(--mut2)", marginTop: 6 }}>Ouvre chaque vidéo (↗) pour la contrôler avant de valider.</div>
       </div>
 
       <div className="sec-h"><h2>Clips comptés</h2></div>
-      <div className="card">{sains.length ? sains.map((k) => <PayClipRow key={k.id} k={k} />) : <div className="empty">Aucun clip à payer cette fenêtre.</div>}</div>
+      <div className="card">{sains.length ? sains.map((k) => <PayClipRow key={k.id} k={k} />) : <div className="empty">Rien à payer : tout est déjà réglé pour ce clipper.</div>}</div>
 
       {exclus.length > 0 && (
         <>
           <div className="sec-h"><h2>Exclus du paiement</h2></div>
-          <div className="card">{exclus.map((k) => <PayClipRow key={k.id} k={k} excluded reason={k.status === "hold" || k.status === "rejected" ? "gelé" : "pas de progression"} />)}</div>
+          <div className="card">{exclus.map((k) => <PayClipRow key={k.id} k={k} excluded reason={k.status === "hold" || k.status === "rejected" ? "gelé" : k.due > 0 ? "déjà payé" : "rien de neuf"} />)}</div>
         </>
       )}
 
@@ -488,9 +586,12 @@ function PayVerify({ c, data, actions }: { c: AdmClipper; data: AdminData; actio
           <div style={{ fontSize: 12, color: "var(--mut)", fontWeight: 600 }}>À verser à {c.name}</div>
           <div className="display" style={{ fontSize: 30, fontWeight: 700 }}>{euro(total)}</div>
         </div>
-        <div style={{ fontSize: 12, color: "var(--mut)", marginTop: 4 }}>{sains.length} clips sains comptés · {euro(exclusTotal)} gelés exclus</div>
-        <div style={{ fontSize: 11.5, color: "var(--mut2)", marginTop: 8 }}>Le versement définitif (figer la preuve, marquer payé) arrive en tranche 3.</div>
-        <button className="btn btn-pri" style={{ marginTop: 14, padding: 14 }} onClick={() => { actions.showToast(`${euro(total)} — moteur de paiement en tranche 3`); actions.go("pay"); }}>Verser {euro(total)} · figer la preuve</button>
+        <div style={{ fontSize: 12, color: "var(--mut)", marginTop: 4 }}>{sains.length} clip{sains.length > 1 ? "s" : ""} compté{sains.length > 1 ? "s" : ""}{geles ? ` · ${euro(exclusTotal)} gelés exclus` : ""}</div>
+        <div style={{ fontSize: 11.5, color: "var(--mut2)", marginTop: 8 }}>En validant, les vues actuelles sont figées comme preuve. Le virement (PayPal/IBAN : {c.payout_detail || "non renseigné"}) se fait de ton côté.</div>
+        <button className="btn btn-pri" style={{ marginTop: 14, padding: 14 }} disabled={busy || total <= 0} onClick={settle}>
+          {busy ? "Validation…" : `Marquer ${euro(total)} versés · figer la preuve`}
+        </button>
+        {err && <div className="auth-err">{err}</div>}
       </div>
     </>
   );
@@ -568,8 +669,8 @@ function Team({ actions }: { actions: AdmActions }) {
 }
 
 /* ───────────── RACINE ───────────── */
-export default function Admin({ tab, actions, catalog, isOwner, userName, clipperId, payClipper }: {
-  tab: string; actions: AdmActions; catalog: Catalog; isOwner?: boolean; userName?: string | null; clipperId?: string | null; payClipper?: string | null;
+export default function Admin({ tab, actions, catalog, arena, isOwner, userName, clipperId, payClipper }: {
+  tab: string; actions: AdmActions; catalog: Catalog; arena: Arena; isOwner?: boolean; userName?: string | null; clipperId?: string | null; payClipper?: string | null;
 }) {
   const data = useAdminData(true);
 
@@ -584,7 +685,7 @@ export default function Admin({ tab, actions, catalog, isOwner, userName, clippe
     screen = c ? <ClipperDetail c={c} data={data} actions={actions} /> : <Clippers data={data} actions={actions} />;
   } else if (tab === "campaigns") screen = <Campaigns catalog={catalog} actions={actions} />;
   else if (tab === "clips") screen = <ClipsFeed data={data} catalog={catalog} />;
-  else if (tab === "challenges") screen = <Challenges data={data} actions={actions} />;
+  else if (tab === "challenges") screen = <Challenges arena={arena} actions={actions} />;
   else if (tab === "assets") screen = <AssetsScreen catalog={catalog} actions={actions} />;
   else if (tab === "fraud") screen = <Fraud data={data} />;
   else if (tab === "pay") screen = <Payments data={data} actions={actions} />;
