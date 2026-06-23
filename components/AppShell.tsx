@@ -209,7 +209,6 @@ export default function AppShell() {
         <p style={{ color: "var(--mut)", fontSize: 13 }}>Que veux-tu lancer ?</p>
         <button className="btn btn-pri" style={{ marginTop: 14, padding: 14, display: "flex", alignItems: "center", gap: 10, justifyContent: "flex-start" }} onClick={openNewChallenge}><Icon name="trophy" /><span>Nouveau challenge</span></button>
         <button className="btn btn-gh" style={{ marginTop: 10, padding: 14, display: "flex", alignItems: "center", gap: 10, justifyContent: "flex-start" }} onClick={openNewCampaign}><Icon name="folder" /><span>Nouvelle campagne</span></button>
-        <button className="btn btn-gh" style={{ marginTop: 10, padding: 14, display: "flex", alignItems: "center", gap: 10, justifyContent: "flex-start" }} onClick={openImport}><Icon name="grid" /><span>Importer un asset</span></button>
         <button className="btn btn-gh" style={{ marginTop: 14, padding: 12 }} onClick={closeSheet}>Annuler</button>
       </>
     );

@@ -10,6 +10,7 @@ import {
 import { Catalog, AssetReal, initialsOf } from "@/lib/catalog";
 import { Arena, BoardRow, endsLabel, rewardText, kindLabel } from "@/lib/arena";
 import { getMyCode, getMyReferrals, refLink, Filleul, REF_MILESTONE, REF_BONUS } from "@/lib/referral";
+import { DRIVE_URL } from "@/lib/config";
 
 export type ClipActions = {
   go: (tab: string) => void;
@@ -61,7 +62,7 @@ function Home({ clips, name, place, arena, actions }: { clips: MyClip[]; name: s
 
   // encart "tip" qui pousse à l'action (le plus pertinent)
   const tip = (() => {
-    if (clips.length === 0) return { ic: "🎬", t: "Poste ton premier clip", s: "Choisis un asset dans Campagnes et lance-toi.", go: "camp" };
+    if (clips.length === 0) return { ic: "🎬", t: "Poste ton premier clip", s: "Récupère un contenu sur le Drive et lance-toi.", go: "camp" };
     const soonChallenge = liveChallenges.find((c) => c.ends_at && new Date(c.ends_at).getTime() - Date.now() < 864e5);
     if (gain >= SEUIL) return { ic: "💰", t: "Seuil atteint — tu peux être payé !", s: `${euro(gain)} en attente. Continue sur ta lancée.`, go: "bilan" };
     if (gain >= SEUIL * 0.5) return { ic: "🔥", t: `Plus que ${euro(SEUIL - gain)} pour le seuil`, s: "Tu y es presque — un clip de plus peut suffire.", go: "camp" };
@@ -142,7 +143,6 @@ function Home({ clips, name, place, arena, actions }: { clips: MyClip[]; name: s
 function Campaigns({ camp, catalog, actions }: { camp: string | null; catalog: Catalog; actions: ClipActions }) {
   if (camp) {
     const c = catalog.campaigns.find((x) => x.id === camp);
-    const list = catalog.assets.filter((a) => a.campaign_id === camp);
     if (!c) return <div className="empty" style={{ marginTop: 20 }}>Campagne introuvable.</div>;
     return (
       <>
@@ -151,19 +151,14 @@ function Campaigns({ camp, catalog, actions }: { camp: string | null; catalog: C
           <div><div style={{ fontWeight: 600, fontSize: 15 }}>{c.name}</div>
             <div style={{ fontSize: 12, color: "var(--mut)" }}>{String(c.rate).replace(".", ",")} € / 1000 vues</div></div>
         </div>
-        {list.length === 0 ? (
-          <div className="card" style={{ marginTop: 14 }}><div className="empty">Aucun asset dans cette campagne pour l&apos;instant.</div></div>
-        ) : (
-          <div className="grid">
-            {list.map((a) => (
-              <div className="asset" key={a.id}>
-                <div className="cov" style={{ background: c.accent }}><div className="play">▶</div>{a.duration && <div className="dur">{a.duration}</div>}</div>
-                <div className="b"><div className="ti">{a.title}</div><div className="mt">↓ {fmt(a.downloads)} · {a.clips} clips</div>
-                  <button className="btn btn-pri" onClick={() => actions.openDownload(a)}>Télécharger</button></div>
-              </div>
-            ))}
-          </div>
-        )}
+        {c.description && <p style={{ color: "var(--mut)", fontSize: 13, margin: "12px 2px 0" }}>{c.description}</p>}
+
+        <div className="card" style={{ marginTop: 14, background: "linear-gradient(150deg,rgba(45,226,230,.12),rgba(139,108,255,.06)),var(--surf)", borderColor: "var(--line2)" }}>
+          <div style={{ fontWeight: 700, fontSize: 15 }}>📁 Tous les contenus sont sur le Drive</div>
+          <div style={{ fontSize: 12.5, color: "var(--mut)", marginTop: 4 }}>Pioche ce que tu veux, mélange les intros et les séquences, monte ta vidéo, puis soumets ton clip ici.</div>
+          <a className="btn btn-pri" style={{ marginTop: 12, padding: 13, display: "block", textAlign: "center", textDecoration: "none" }} href={DRIVE_URL} target="_blank" rel="noopener noreferrer">Ouvrir le Drive ↗</a>
+          <button className="btn btn-gh" style={{ marginTop: 9, padding: 12 }} onClick={() => actions.openSubmit()}>J&apos;ai mon clip — le soumettre</button>
+        </div>
       </>
     );
   }
@@ -171,7 +166,13 @@ function Campaigns({ camp, catalog, actions }: { camp: string | null; catalog: C
     <>
       <div className="eyebrow" style={{ marginTop: 14 }}>Campagnes</div>
       <h2 className="display" style={{ fontSize: 22, margin: "4px 0 4px" }}>Choisis ton terrain</h2>
-      <p style={{ color: "var(--mut)", fontSize: 13, marginBottom: 6 }}>Chaque campagne = ses contenus et son tarif aux vues.</p>
+      <p style={{ color: "var(--mut)", fontSize: 13, marginBottom: 6 }}>Chaque campagne = son tarif aux vues. Les contenus sont sur le Drive commun.</p>
+
+      <a className="card" style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 13, textDecoration: "none", background: "linear-gradient(150deg,rgba(45,226,230,.14),rgba(139,108,255,.06)),var(--surf)", borderColor: "var(--line2)" }} href={DRIVE_URL} target="_blank" rel="noopener noreferrer">
+        <div className="thumb" style={{ width: 48, height: 48, background: "var(--grad)", fontSize: 22 }}>📁</div>
+        <div style={{ flex: 1 }}><div style={{ fontWeight: 700, fontSize: 15 }}>Accéder au Drive</div><div style={{ fontSize: 12, color: "var(--mut)", marginTop: 2 }}>Tous les contenus à clipper, au même endroit ↗</div></div>
+      </a>
+
       {catalog.loading && <div className="card" style={{ marginTop: 12 }}><div className="empty">Chargement du catalogue…</div></div>}
       {!catalog.loading && catalog.campaigns.filter((c) => c.is_active).length === 0 && (
         <div className="card" style={{ marginTop: 12 }}><div className="empty">Aucune campagne active pour l&apos;instant. Reviens bientôt.</div></div>
@@ -181,7 +182,7 @@ function Campaigns({ camp, catalog, actions }: { camp: string | null; catalog: C
           <div className="thumb" style={{ width: 54, height: 54, background: c.accent }}>{initialsOf(c.name)}</div>
           <div style={{ flex: 1 }}><div style={{ fontWeight: 600, fontSize: 15 }}>{c.name}</div>
             <div style={{ fontSize: 12, color: "var(--mut)", marginTop: 2 }}>{c.description}</div>
-            <div style={{ marginTop: 7 }}><span className="tag">{c.assetCount} contenu{c.assetCount > 1 ? "s" : ""}</span><span className="tag">{String(c.rate).replace(".", ",")} € / 1000 vues</span></div></div>
+            <div style={{ marginTop: 7 }}><span className="tag">{String(c.rate).replace(".", ",")} € / 1000 vues</span></div></div>
         </div>
       ))}
     </>
@@ -557,7 +558,7 @@ export default function Clipper({ tab, camp, clipDetail, clips, catalog, arena, 
             <div style={{ textAlign: "center", fontSize: 34, marginTop: 4 }}>🎬🔥</div>
             <h3 style={{ textAlign: "center" }}>Bienvenue dans la War Room</h3>
             <p style={{ color: "var(--mut)", fontSize: 13.5, textAlign: "center", marginBottom: 14 }}>Gagne de l&apos;argent en clippant. 3 étapes :</p>
-            <div className="card" style={{ marginBottom: 8 }}><div className="row" style={{ paddingTop: 0 }}><div className="thumb" style={{ background: "var(--grad)" }}>1</div><div><div className="t">Choisis un asset</div><div className="s">Onglet Campagnes → télécharge la vidéo source</div></div></div></div>
+            <div className="card" style={{ marginBottom: 8 }}><div className="row" style={{ paddingTop: 0 }}><div className="thumb" style={{ background: "var(--grad)" }}>1</div><div><div className="t">Récupère un contenu</div><div className="s">Onglet Campagnes → ouvre le Drive commun</div></div></div></div>
             <div className="card" style={{ marginBottom: 8 }}><div className="row" style={{ paddingTop: 0 }}><div className="thumb" style={{ background: "var(--grad)" }}>2</div><div><div className="t">Poste & soumets ton clip</div><div className="s">Le bouton + → on suit tes vues automatiquement</div></div></div></div>
             <div className="card" style={{ marginBottom: 14 }}><div className="row" style={{ paddingTop: 0 }}><div className="thumb" style={{ background: "var(--grad)" }}>3</div><div><div className="t">Tu es payé aux vues</div><div className="s">Plus tu fais de vues, plus tu gagnes. Vise le seuil !</div></div></div></div>
             <button className="btn btn-pri" style={{ padding: 14 }} onClick={() => { closeWelcome(); celebrate({ emojis: ["🎬", "🔥", "💰"] }); }}>C&apos;est parti 🚀</button>

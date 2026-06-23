@@ -32,12 +32,6 @@ export default function SubmitSheet({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // assets filtrés sur la campagne choisie (+ celui pré-rempli même si autre campagne)
-  const campAssets = useMemo(
-    () => assets.filter((a) => a.campaign_id === campaignId),
-    [assets, campaignId]
-  );
-
   function onUrl(v: string) {
     setUrl(v);
     const d = detect(v);
@@ -102,16 +96,7 @@ export default function SubmitSheet({
           {campaigns.filter((c) => c.is_active).length === 0 && <option value="">Aucune campagne disponible</option>}
           {campaigns.filter((c) => c.is_active).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
-        <div className="prefill">Indispensable pour savoir quel contenu a généré quelles vues.</div>
-      </div>
-
-      <div className="field">
-        <label>Asset source</label>
-        <select value={assetId} onChange={(e) => setAssetId(e.target.value)}>
-          <option value="">Clip original / sans asset</option>
-          {campAssets.map((a) => <option key={a.id} value={a.id}>{a.title}</option>)}
-        </select>
-        <div className="prefill">Choisis l&apos;asset que tu as clippé, ou « clip original » si c&apos;est ton propre montage.</div>
+        <div className="prefill">Indispensable pour le tarif appliqué à tes vues.</div>
       </div>
 
       <button className="btn btn-pri" style={{ marginTop: 18, padding: 14 }} onClick={submit} disabled={busy}>

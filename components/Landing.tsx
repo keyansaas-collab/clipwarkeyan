@@ -6,35 +6,44 @@ import { fmt } from "@/lib/data";
 import { getSupabase } from "@/lib/supabase/client";
 
 type LB = { name: string; vues: number };
+type PubCamp = { id: string; name: string; description: string | null; rate: number; accent: string | null; clips: number; vues: number };
 
 export default function Landing() {
   const [authed, setAuthed] = useState(false);
-  const [vues, setVues] = useState(6742300);
-  const [clips, setClips] = useState(128);
-  const [euros, setEuros] = useState(9480);
-  const [board, setBoard] = useState<LB[]>([
-    { name: "Theo R.", vues: 1240000 },
-    { name: "Léa M.", vues: 312000 },
-    { name: "Sofia B.", vues: 288000 },
-    { name: "Nael K.", vues: 164000 },
-  ]);
+  const [vues, setVues] = useState(0);
+  const [clips, setClips] = useState(0);
+  const [clippers, setClippers] = useState(0);
+  const [board, setBoard] = useState<LB[]>([]);
+  const [camps, setCamps] = useState<PubCamp[]>([]);
 
   useEffect(() => {
     getSupabase().auth.getSession().then(({ data }) => setAuthed(!!data.session));
   }, []);
 
+  // vraies stats publiques (sans connexion)
   useEffect(() => {
-    if (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion:reduce)").matches) return;
-    const id = setInterval(() => {
-      setVues((v) => v + Math.floor(Math.random() * 900) + 100);
-      setEuros((e) => e + (Math.random() > 0.6 ? 1 : 0));
-      setClips((c) => Math.max(120, c + (Math.random() > 0.85 ? (Math.random() > 0.5 ? 1 : -1) : 0)));
-      setBoard((b) => [...b.map((x) => ({ ...x, vues: x.vues + Math.floor(Math.random() * 2500) }))].sort((a, z) => z.vues - a.vues));
-    }, 1500);
-    return () => clearInterval(id);
+    const sb = getSupabase();
+    sb.rpc("public_stats").then(({ data }) => {
+      const s = Array.isArray(data) ? data[0] : data;
+      if (s) { setVues(Number(s.vues) || 0); setClips(Number(s.clips) || 0); setClippers(Number(s.clippers) || 0); }
+    });
+    sb.rpc("public_top").then(({ data }) => {
+      setBoard((data || []).map((r: any) => ({ name: r.name, vues: Number(r.vues) || 0 })));
+    });
+    sb.rpc("public_campaigns").then(({ data }) => {
+      setCamps((data || []).map((r: any) => ({ id: r.id, name: r.name, description: r.description, rate: Number(r.rate) || 0, accent: r.accent, clips: Number(r.clips) || 0, vues: Number(r.vues) || 0 })));
+    });
   }, []);
 
-  const max = Math.max(...board.map((b) => b.vues));
+  // léger frémissement "live" sur les vues (à partir du vrai total)
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion:reduce)").matches) return;
+    if (!vues) return;
+    const id = setInterval(() => setVues((v) => v + Math.floor(Math.random() * 40)), 2500);
+    return () => clearInterval(id);
+  }, [vues > 0]);
+
+  const max = Math.max(1, ...board.map((b) => b.vues));
   const cta = authed ? "Entrer dans la War Room" : "Rejoindre l'armée";
 
   const steps = [
@@ -76,13 +85,14 @@ export default function Landing() {
           <span className="pill p-track">lecture seule</span>
         </div>
         <div className="lp-kpis">
-          <div className="lp-kpi"><div className="v gr">{fmt(vues)}</div><div className="l">vues générées · 7 j</div></div>
-          <div className="lp-kpi"><div className="v">{clips}</div><div className="l">clips en suivi</div></div>
-          <div className="lp-kpi"><div className="v">{fmt(euros)} €</div><div className="l">distribués cette semaine</div></div>
+          <div className="lp-kpi"><div className="v gr">{fmt(vues)}</div><div className="l">vues générées</div></div>
+          <div className="lp-kpi"><div className="v">{fmt(clips)}</div><div className="l">clips en suivi</div></div>
+          <div className="lp-kpi"><div className="v">{fmt(clippers)}</div><div className="l">clippers actifs</div></div>
         </div>
+        {board.length > 0 && (
         <div className="card" style={{ background: "var(--bg2)" }}>
           {board.map((b, i) => (
-            <div className="row" key={b.name}>
+            <div className="row" key={i}>
               <div className="thumb" style={{ width: 30, height: 30, fontSize: 12, background: i === 0 ? "var(--grad-coral)" : "var(--surf2)", color: i === 0 ? "#0a0610" : "var(--mut)" }}>{i + 1}</div>
               <div style={{ flex: 1 }}>
                 <div className="t" style={{ fontSize: 13 }}>{b.name}</div>
@@ -92,8 +102,28 @@ export default function Landing() {
             </div>
           ))}
         </div>
+        )}
         <div className="lp-lock"><Icon name="alert" /> Connecte-toi pour soumettre un clip et suivre tes gains.</div>
       </section>
+
+      {camps.length > 0 && (
+        <section className="lp-section" id="campagnes">
+          <h2>Campagnes ouvertes</h2>
+          <p className="sub">Choisis un univers, clippe, encaisse. Partage une campagne à tes amis.</p>
+          <div className="lp-feats">
+            {camps.map((c) => (
+              <a className="lp-feat" key={c.id} href={`/c/${c.id}`} style={{ textDecoration: "none", cursor: "pointer" }}>
+                <div className="fi" style={{ background: c.accent || "var(--grad)" }}><Icon name="clip" /></div>
+                <div style={{ flex: 1 }}>
+                  <h3>{c.name} <span className="g">{c.rate}€ / 1000 vues</span></h3>
+                  <p>{c.description || "Clippe ce contenu et sois payé à tes vues."}</p>
+                  <div style={{ fontSize: 12, color: "var(--mut)", marginTop: 4 }}>{fmt(c.vues)} vues · {fmt(c.clips)} clips →</div>
+                </div>
+              </a>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="lp-section" id="how">
         <h2>Comment ça marche</h2>
