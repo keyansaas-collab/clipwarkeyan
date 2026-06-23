@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Icon } from "./ui";
+import { Icon, Avatar } from "./ui";
 import { getSupabase } from "@/lib/supabase/client";
+import { celebrate } from "@/lib/confetti";
 import {
   platLabel, fmt, euro, MyClip,
 } from "@/lib/data";
@@ -243,6 +244,16 @@ type PayRow = { id: string; amount: number; net_views: number; created_at: strin
 function Bilan({ clips }: { clips: MyClip[] }) {
   const dueViews = clips.reduce((s, c) => s + (c.due || 0), 0);
   const gain = clips.reduce((s, c) => s + (c.gain || 0), 0);
+  useEffect(() => {
+    if (gain >= SEUIL) {
+      try {
+        if (!sessionStorage.getItem("cw_seuil_celebrated")) {
+          sessionStorage.setItem("cw_seuil_celebrated", "1");
+          celebrate({ emojis: ["💰", "🎉", "🔥"] });
+        }
+      } catch {}
+    }
+  }, [gain]);
   const [pays, setPays] = useState<PayRow[]>([]);
   const [paid, setPaid] = useState(0);
   const [loaded, setLoaded] = useState(false);
@@ -297,7 +308,10 @@ function Classement({ arena, userId }: { arena: Arena; userId: string }) {
               const me = c.id === userId;
               return (
                 <div className="row" key={c.id} style={me ? { background: "rgba(139,108,255,.12)", borderRadius: 10 } : {}}>
-                  <div className="thumb" style={{ background: i === 0 ? "var(--grad-coral)" : "var(--surf2)", color: i === 0 ? "#0a0610" : "var(--mut)" }}>{i + 1}</div>
+                  <div style={{ position: "relative" }}>
+                    <Avatar url={c.avatar_url} name={c.name} size={40} />
+                    <div style={{ position: "absolute", top: -4, left: -4, width: 18, height: 18, borderRadius: "50%", fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", background: i === 0 ? "var(--grad-coral)" : "var(--surf2)", color: i === 0 ? "#0a0610" : "var(--mut)", border: "2px solid var(--surf)" }}>{i + 1}</div>
+                  </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div className="t">{c.name}{me ? " (toi)" : ""}</div>
                     <div className="s">{c.rank} · {c.clips} clips</div>
@@ -330,13 +344,39 @@ function Profil({ userId, email, vuesTotal, reloadProfile, actions }: { userId: 
   }
   async function logout() { await getSupabase().auth.signOut(); }
 
+  const [uploading, setUploading] = useState(false);
+  async function uploadAvatar(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { actions.showToast("Photo trop lourde (max 5 Mo)"); return; }
+    setUploading(true);
+    const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+    const path = `${userId}/avatar.${ext}`;
+    const sb = getSupabase();
+    const { error } = await sb.storage.from("avatars").upload(path, file, { upsert: true, cacheControl: "3600" });
+    if (error) { setUploading(false); actions.showToast("Échec de l'upload"); return; }
+    const url = sb.storage.from("avatars").getPublicUrl(path).data.publicUrl + "?t=" + Date.now();
+    await sb.from("profiles").update({ avatar_url: url }).eq("id", userId);
+    setP((o: any) => ({ ...o, avatar_url: url }));
+    setUploading(false); reloadProfile(); actions.showToast("Photo mise à jour ✨");
+  }
+
   const r = rankInfo(vuesTotal);
   if (!p) return <div className="wrap"><div className="empty">Chargement…</div></div>;
 
   return (
     <>
       <div className="eyebrow" style={{ marginTop: 14 }}>Ton profil</div>
-      <h2 className="display" style={{ fontSize: 22, margin: "4px 0 10px" }}>{p.display_name || "Clipper"}</h2>
+      <div style={{ display: "flex", alignItems: "center", gap: 14, margin: "8px 0 12px" }}>
+        <Avatar url={p.avatar_url} name={p.display_name || "C"} size={68} />
+        <div style={{ flex: 1 }}>
+          <h2 className="display" style={{ fontSize: 22, margin: 0 }}>{p.display_name || "Clipper"}</h2>
+          <label className="btn btn-gh" style={{ width: "auto", padding: "7px 12px", fontSize: 12.5, marginTop: 6, display: "inline-block", cursor: "pointer" }}>
+            {uploading ? "Envoi…" : p.avatar_url ? "Changer la photo" : "Ajouter une photo"}
+            <input type="file" accept="image/*" style={{ display: "none" }} onChange={uploadAvatar} disabled={uploading} />
+          </label>
+        </div>
+      </div>
       <div className="stats">
         <div className="stat"><div className="v mono">{r.level}</div><div className="l">niveau</div></div>
         <div className="stat"><div className="v mono">{r.rank}</div><div className="l">rang</div></div>
@@ -374,9 +414,9 @@ function Profil({ userId, email, vuesTotal, reloadProfile, actions }: { userId: 
 }
 
 /* ====================== RACINE ====================== */
-export default function Clipper({ tab, camp, clipDetail, clips, catalog, arena, userName, userEmail, userId, reloadProfile, actions }: {
+export default function Clipper({ tab, camp, clipDetail, clips, catalog, arena, userName, userEmail, userId, userAvatar, reloadProfile, actions }: {
   tab: string; camp: string | null; clipDetail: string | null; clips: MyClip[]; catalog: Catalog; arena: Arena;
-  userName?: string | null; userEmail?: string | null; userId: string;
+  userName?: string | null; userEmail?: string | null; userId: string; userAvatar?: string | null;
   reloadProfile: () => void; actions: ClipActions;
 }) {
   const vuesTotal = clips.reduce((s, c) => s + c.vues, 0);
@@ -385,6 +425,18 @@ export default function Clipper({ tab, camp, clipDetail, clips, catalog, arena, 
 
   // place réelle au classement (0 = pas encore classé)
   const place = arena.board.findIndex((b) => b.id === userId) + 1;
+
+  // pop-up de bienvenue (1re visite)
+  const [welcome, setWelcome] = useState(false);
+  useEffect(() => {
+    try {
+      if (!localStorage.getItem("cw_welcome_seen")) setWelcome(true);
+    } catch {}
+  }, []);
+  function closeWelcome() {
+    try { localStorage.setItem("cw_welcome_seen", "1"); } catch {}
+    setWelcome(false);
+  }
 
   let screen: React.ReactNode;
   if (tab === "camp") screen = <Campaigns camp={camp} catalog={catalog} actions={actions} />;
@@ -400,12 +452,26 @@ export default function Clipper({ tab, camp, clipDetail, clips, catalog, arena, 
     <>
       <div className="hud" onClick={() => actions.go("profil")} style={{ cursor: "pointer" }}>
         <div className="hud-top">
-          <div className="ava">{(userName || "C")[0].toUpperCase()}</div>
+          <Avatar url={userAvatar} name={userName || "C"} size={42} />
           <div><div className="hud-name">{userName || "Clipper"}</div><div className="hud-sub">{r.rank} · Niveau {r.level}</div></div>
           <div className="rank-pill"><span className="dot" />{place ? `#${place} cette semaine` : "Pas encore classé"}</div>
         </div>
       </div>
       <div className="wrap">{screen}</div>
+      {welcome && (
+        <div className="scrim" onClick={(e) => { if (e.target === e.currentTarget) closeWelcome(); }}>
+          <div className="sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="grab" />
+            <div style={{ textAlign: "center", fontSize: 34, marginTop: 4 }}>🎬🔥</div>
+            <h3 style={{ textAlign: "center" }}>Bienvenue dans la War Room</h3>
+            <p style={{ color: "var(--mut)", fontSize: 13.5, textAlign: "center", marginBottom: 14 }}>Gagne de l&apos;argent en clippant. 3 étapes :</p>
+            <div className="card" style={{ marginBottom: 8 }}><div className="row" style={{ paddingTop: 0 }}><div className="thumb" style={{ background: "var(--grad)" }}>1</div><div><div className="t">Choisis un asset</div><div className="s">Onglet Campagnes → télécharge la vidéo source</div></div></div></div>
+            <div className="card" style={{ marginBottom: 8 }}><div className="row" style={{ paddingTop: 0 }}><div className="thumb" style={{ background: "var(--grad)" }}>2</div><div><div className="t">Poste & soumets ton clip</div><div className="s">Le bouton + → on suit tes vues automatiquement</div></div></div></div>
+            <div className="card" style={{ marginBottom: 14 }}><div className="row" style={{ paddingTop: 0 }}><div className="thumb" style={{ background: "var(--grad)" }}>3</div><div><div className="t">Tu es payé aux vues</div><div className="s">Plus tu fais de vues, plus tu gagnes. Vise le seuil !</div></div></div></div>
+            <button className="btn btn-pri" style={{ padding: 14 }} onClick={() => { closeWelcome(); celebrate({ emojis: ["🎬", "🔥", "💰"] }); }}>C&apos;est parti 🚀</button>
+          </div>
+        </div>
+      )}
     </>
   );
 }
