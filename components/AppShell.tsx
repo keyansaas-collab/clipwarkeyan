@@ -424,6 +424,7 @@ function CampaignForm({ existing, onCancel, onDone }: { existing?: import("@/lib
   const [active, setActive] = useState(existing ? existing.is_active : true);
   const [busy, setBusy] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   async function save() {
@@ -481,6 +482,21 @@ function CampaignForm({ existing, onCancel, onDone }: { existing?: import("@/lib
       <button className="btn btn-pri" style={{ marginTop: 18, padding: 14 }} onClick={save} disabled={busy}>
         {busy ? "Enregistrement…" : edit ? "Enregistrer" : "Créer la campagne"}
       </button>
+
+      {edit && (
+        <div className="card" style={{ marginTop: 14, background: "var(--bg2)" }}>
+          <div style={{ fontWeight: 600, fontSize: 13.5 }}>Lien public à partager</div>
+          <div style={{ fontSize: 12, color: "var(--mut)", marginTop: 2 }}>Une page vitrine de cette campagne, à envoyer aux clippers.</div>
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <div className="mono" style={{ flex: 1, minWidth: 0, background: "var(--surf)", border: "1px solid var(--line2)", borderRadius: 10, padding: "9px 11px", fontSize: 11.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{(typeof window !== "undefined" ? window.location.origin : "") + "/c/" + existing!.id}</div>
+            <button className="btn btn-gh" style={{ width: "auto", padding: "0 14px" }} onClick={async () => {
+              const link = window.location.origin + "/c/" + existing!.id;
+              if (navigator.share) { try { await navigator.share({ title: existing!.name, text: "Clippe cette campagne sur ClipWar 🎬", url: link }); return; } catch {} }
+              try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch {}
+            }}>{copied ? "Copié ✨" : "Partager"}</button>
+          </div>
+        </div>
+      )}
 
       {edit && (
         confirmDel ? (
