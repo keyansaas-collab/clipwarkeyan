@@ -13,7 +13,7 @@ import { getSupabase } from "@/lib/supabase/client";
 export type AdmClipStatus = "track" | "paid" | "hold" | "rejected";
 
 export type AdmClipper = {
-  id: string; name: string; rank: string; country: string | null; is_minor: boolean;
+  id: string; name: string; rank: string; avatar_url: string | null; country: string | null; is_minor: boolean;
   tiktok: string | null; instagram: string | null; youtube: string | null;
   payout_method: string | null; payout_detail: string | null;
   clips: number; vues_total: number; vues_7: number; gain: number;
@@ -90,7 +90,7 @@ export function useAdminData(enabled: boolean): AdminData {
     setDash(d ? { vues_7: n(d.vues_7), a_verser: n(d.a_verser), clippers_actifs: n(d.clippers_actifs), pubs_7: n(d.pubs_7) } : EMPTY_DASH);
 
     setClippers((clippersR.data || []).map((r: any) => ({
-      id: r.id, name: r.name, rank: r.rank, country: r.country, is_minor: !!r.is_minor,
+      id: r.id, name: r.name, rank: r.rank, avatar_url: r.avatar_url, country: r.country, is_minor: !!r.is_minor,
       tiktok: r.tiktok, instagram: r.instagram, youtube: r.youtube,
       payout_method: r.payout_method, payout_detail: r.payout_detail,
       clips: n(r.clips), vues_total: n(r.vues_total), vues_7: n(r.vues_7), gain: n(r.gain),

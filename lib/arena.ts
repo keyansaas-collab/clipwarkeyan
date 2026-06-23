@@ -23,7 +23,7 @@ export type ArenaChallenge = {
 };
 
 export type BoardRow = {
-  id: string; name: string; rank: string; clips: number; vues_7: number; vues_total: number;
+  id: string; name: string; rank: string; avatar_url: string | null; clips: number; vues_7: number; vues_total: number;
 };
 
 export type Arena = {
@@ -58,7 +58,7 @@ export function useArena(enabled: boolean): Arena {
       winner_id: r.winner_id, winner_name: r.winner_name, awarded_at: r.awarded_at,
     })));
     setBoard((lbR.data || []).map((r: any) => ({
-      id: r.id, name: r.name, rank: r.rank, clips: n(r.clips), vues_7: n(r.vues_7), vues_total: n(r.vues_total),
+      id: r.id, name: r.name, rank: r.rank, avatar_url: r.avatar_url, clips: n(r.clips), vues_7: n(r.vues_7), vues_total: n(r.vues_total),
     })));
     setLoading(false);
   }, [enabled]);

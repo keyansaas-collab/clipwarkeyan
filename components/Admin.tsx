@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState } from "react";
-import { Hud } from "./ui";
+import { Hud, Avatar } from "./ui";
 import { getSupabase } from "@/lib/supabase/client";
+import { celebrate } from "@/lib/confetti";
 import { fmt, euro, platLabel, agoLabel } from "@/lib/data";
 import { Catalog, AssetReal, campNameOf, campGradOf, initialsOf } from "@/lib/catalog";
 import { Arena, ArenaChallenge, endsLabel, rewardText, metricLabel, kindLabel, fetchChallengeBoard, awardChallenge } from "@/lib/arena";
@@ -146,6 +147,27 @@ function PepiteRow({ a, catalog }: { a: AdmAsset; catalog: Catalog }) {
   );
 }
 
+function RefreshViewsButton({ actions }: { actions: AdmActions }) {
+  const [busy, setBusy] = useState(false);
+  async function run() {
+    setBusy(true);
+    try {
+      const { data: s } = await getSupabase().auth.getSession();
+      const token = s.session?.access_token;
+      const res = await fetch("/api/admin/refresh-views", { method: "POST", headers: { authorization: `Bearer ${token}` } });
+      const j = await res.json();
+      if (!res.ok) { actions.showToast(j.error === "forbidden" ? "Réservé au staff" : "Échec du relevé"); }
+      else actions.showToast(`Relevé : ${j.inserted} maj · ${j.flagged} gelés · ${j.skipped} ignorés`);
+    } catch { actions.showToast("Erreur réseau"); }
+    setBusy(false);
+  }
+  return (
+    <button className="btn btn-gh" style={{ marginTop: 12, padding: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} onClick={run} disabled={busy}>
+      {busy ? "Relevé en cours…" : "↻ Rafraîchir les vues maintenant"}
+    </button>
+  );
+}
+
 function Dash({ data, catalog, isOwner, actions }: { data: AdminData; catalog: Catalog; isOwner?: boolean; actions: AdmActions }) {
   const pepites = [...data.assets].filter((a) => a.downloads > 0).sort((a, b) => b.vues / b.downloads - a.vues / a.downloads).slice(0, 3);
   const topClippers = [...data.clippers].sort((a, b) => b.vues_7 - a.vues_7).slice(0, 3);
@@ -162,6 +184,7 @@ function Dash({ data, catalog, isOwner, actions }: { data: AdminData; catalog: C
           <span style={{ color: "var(--mut)" }}>→</span>
         </div>
       )}
+      <RefreshViewsButton actions={actions} />
       <div className="adm-kpis">
         <div className="adm-kpi"><div className="v gr">{data.dash.vues_7 >= 1e6 ? (Math.round(data.dash.vues_7 / 1e5) / 10) + "M" : fmt(data.dash.vues_7)}</div><div className="l">vues nettes · 7 j</div></div>
         <div className="adm-kpi"><div className="v">{euro(data.dash.a_verser)}</div><div className="l">dû en attente</div></div>
@@ -211,7 +234,7 @@ function Clippers({ data, actions }: { data: AdminData; actions: AdmActions }) {
         {data.loading ? <div className="empty">Chargement…</div>
           : sorted.length ? sorted.map((c, i) => (
             <div className="row" key={c.id} style={{ cursor: "pointer" }} onClick={() => actions.openClipper(c.id)}>
-              <div className="thumb" style={{ background: i === 0 ? "var(--grad-coral)" : "var(--surf2)", color: i === 0 ? "#0a0610" : "var(--mut)" }}>{initialsOf(c.name)}</div>
+              <Avatar url={c.avatar_url} name={c.name} size={40} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="t">{c.name} {c.is_minor && <span className="adm-minor">mineur</span>}</div>
                 <div className="s">{c.rank}{c.country ? " · " + c.country : ""} · {c.clips} clips</div>
@@ -235,7 +258,7 @@ function ClipperDetail({ c, data, actions }: { c: AdmClipper; data: AdminData; a
         <button className="btn btn-gh" style={{ width: "auto", padding: "8px 12px" }} onClick={() => actions.go("clippers")}>← Clippers</button>
       </div>
       <div className="card" style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 13 }}>
-        <div className="thumb" style={{ width: 52, height: 52, fontSize: 17, background: "var(--grad)" }}>{initialsOf(c.name)}</div>
+        <Avatar url={c.avatar_url} name={c.name} size={52} square />
         <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 600, fontSize: 17 }} className="display">{c.name}</div>
           <div className="s">{c.rank}{c.country ? " · " + c.country : ""}</div>
@@ -551,6 +574,7 @@ function PayVerify({ c, data, actions }: { c: AdmClipper; data: AdminData; actio
     if (error) { setErr(error.message); return; }
     const row = Array.isArray(res) ? res[0] : res;
     const amt = row ? Number(row.amount) : total;
+    celebrate({ emojis: ["💸", "✅", "🎉"] });
     actions.showToast(`${euro(amt)} versés à ${c.name} · preuve figée`);
     await data.reload();
     actions.go("pay");
@@ -669,8 +693,8 @@ function Team({ actions }: { actions: AdmActions }) {
 }
 
 /* ───────────── RACINE ───────────── */
-export default function Admin({ tab, actions, catalog, arena, isOwner, userName, clipperId, payClipper }: {
-  tab: string; actions: AdmActions; catalog: Catalog; arena: Arena; isOwner?: boolean; userName?: string | null; clipperId?: string | null; payClipper?: string | null;
+export default function Admin({ tab, actions, catalog, arena, isOwner, userName, userAvatar, clipperId, payClipper }: {
+  tab: string; actions: AdmActions; catalog: Catalog; arena: Arena; isOwner?: boolean; userName?: string | null; userAvatar?: string | null; clipperId?: string | null; payClipper?: string | null;
 }) {
   const data = useAdminData(true);
 
@@ -693,7 +717,7 @@ export default function Admin({ tab, actions, catalog, arena, isOwner, userName,
 
   return (
     <>
-      <Hud name={userName || "Keyan"} sub="Admin · War Room" rank={`⚡ ${data.dash.clippers_actifs} clipper${data.dash.clippers_actifs > 1 ? "s" : ""} actif${data.dash.clippers_actifs > 1 ? "s" : ""}`} />
+      <Hud name={userName || "Keyan"} avatarUrl={userAvatar} sub="Admin · War Room" rank={`⚡ ${data.dash.clippers_actifs} clipper${data.dash.clippers_actifs > 1 ? "s" : ""} actif${data.dash.clippers_actifs > 1 ? "s" : ""}`} />
       <div className="wrap">{screen}</div>
     </>
   );
