@@ -12,6 +12,7 @@ import { platLabel, MyClip } from "@/lib/data";
 import { useCatalog, AssetReal } from "@/lib/catalog";
 import { useArena } from "@/lib/arena";
 import { useNotifications, agoShort, notifEmoji } from "@/lib/notifications";
+import { linkReferral } from "@/lib/referral";
 
 type Role = "clip" | "adm";
 type NavLink = { id: string; label: string; icon: string };
@@ -51,6 +52,27 @@ export default function AppShell() {
     });
     return () => sub.subscription.unsubscribe();
   }, []);
+
+  // capture du code de parrainage présent dans l'URL (?ref=CODE)
+  useEffect(() => {
+    try {
+      const code = new URLSearchParams(window.location.search).get("ref");
+      if (code) localStorage.setItem("cw_ref", code.toUpperCase());
+    } catch {}
+  }, []);
+  // une fois le profil chargé, lie le parrain (1 fois)
+  const refDoneRef = React.useRef(false);
+  useEffect(() => {
+    if (refDoneRef.current || !session || !profile) return;
+    let code: string | null = null;
+    try { code = localStorage.getItem("cw_ref"); } catch {}
+    if (!code) return;
+    refDoneRef.current = true;
+    linkReferral(code).then((ok) => {
+      try { localStorage.removeItem("cw_ref"); } catch {}
+      if (ok) showToast("Parrain enregistré 👋");
+    });
+  }, [session, profile]);
 
   // charge le profil (rôle + onboarding) ; réutilisable après la fiche
   const loadProfile = React.useCallback(() => {

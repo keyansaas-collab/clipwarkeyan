@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Hud, Avatar } from "./ui";
 import { getSupabase } from "@/lib/supabase/client";
 import { celebrate } from "@/lib/confetti";
+import { REF_BONUS } from "@/lib/referral";
 import { fmt, euro, platLabel, agoLabel } from "@/lib/data";
 import { Catalog, AssetReal, campNameOf, campGradOf, initialsOf } from "@/lib/catalog";
 import { Arena, ArenaChallenge, endsLabel, rewardText, metricLabel, kindLabel, fetchChallengeBoard, awardChallenge } from "@/lib/arena";
@@ -602,6 +603,40 @@ function Payments({ data, actions }: { data: AdminData; actions: AdmActions }) {
             <div className="end"><div className="vue mono" style={{ color: "var(--mint)" }}>{euro(p.amount)}</div><div className="delta flat">payé</div></div>
           </div>
         )) : <div className="empty">Aucun versement enregistré pour l&apos;instant.</div>}
+      </div>
+
+      <ReferralPayouts />
+    </>
+  );
+}
+
+/* ───────────── BONUS DE PARRAINAGE (admin) ───────────── */
+function ReferralPayouts() {
+  const [rows, setRows] = useState<{ parrain_id: string; parrain: string; filleuls: number; valides: number }[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    getSupabase().rpc("admin_referrals").then(({ data }) => {
+      setRows((data || []).map((r: any) => ({ parrain_id: r.parrain_id, parrain: r.parrain, filleuls: Number(r.filleuls) || 0, valides: Number(r.valides) || 0 })));
+      setLoaded(true);
+    });
+  }, []);
+  const withBonus = rows.filter((r) => r.valides > 0);
+  if (!loaded || rows.length === 0) return null;
+  return (
+    <>
+      <div className="sec-h"><h2>Bonus de parrainage</h2></div>
+      <div className="card">
+        {rows.map((r) => (
+          <div className="row" key={r.parrain_id}>
+            <div className="thumb" style={{ background: "var(--surf2)", color: "var(--mut)" }}>{initialsOf(r.parrain)}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="t">{r.parrain}</div>
+              <div className="s">{r.filleuls} filleul{r.filleuls > 1 ? "s" : ""} · {r.valides} validé{r.valides > 1 ? "s" : ""}</div>
+            </div>
+            <div className="end"><div className="vue mono" style={{ color: r.valides ? "var(--mint)" : "var(--mut2)" }}>{euro(r.valides * REF_BONUS)}</div><div className="delta flat">bonus</div></div>
+          </div>
+        ))}
+        {withBonus.length === 0 && <div style={{ fontSize: 11.5, color: "var(--mut2)", padding: "4px 2px 0" }}>Aucun bonus débloqué pour l&apos;instant (palier non atteint).</div>}
       </div>
     </>
   );

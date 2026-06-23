@@ -9,6 +9,7 @@ import {
 } from "@/lib/data";
 import { Catalog, AssetReal, initialsOf } from "@/lib/catalog";
 import { Arena, BoardRow, endsLabel, rewardText, kindLabel } from "@/lib/arena";
+import { getMyCode, getMyReferrals, refLink, Filleul, REF_MILESTONE, REF_BONUS } from "@/lib/referral";
 
 export type ClipActions = {
   go: (tab: string) => void;
@@ -423,9 +424,83 @@ function Profil({ userId, email, vuesTotal, reloadProfile, actions }: { userId: 
         <div className="field"><label>{p.payout_method === "iban" ? "IBAN" : "Email PayPal"}</label><input value={p.payout_detail || ""} onChange={(e) => set("payout_detail", e.target.value)} /></div>
       </div>
 
+      <ReferralCard actions={actions} />
+
       <button className="btn btn-pri" style={{ marginTop: 16, padding: 14 }} onClick={save} disabled={busy}>{busy ? "Enregistrement…" : "Enregistrer"}</button>
       <button className="btn btn-gh" style={{ marginTop: 9, padding: 12 }} onClick={logout}>Se déconnecter</button>
       <div style={{ fontSize: 11.5, color: "var(--mut2)", textAlign: "center", marginTop: 12 }}>Connecté en tant que {email}</div>
+    </>
+  );
+}
+
+/* ───────────── PARRAINAGE ───────────── */
+function ReferralCard({ actions }: { actions: ClipActions }) {
+  const [code, setCode] = useState<string | null>(null);
+  const [filleuls, setFilleuls] = useState<Filleul[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      const [c, f] = await Promise.all([getMyCode(), getMyReferrals()]);
+      setCode(c); setFilleuls(f); setLoading(false);
+    })();
+  }, []);
+
+  const valides = filleuls.filter((f) => f.reached).length;
+  const bonus = valides * REF_BONUS;
+  const link = code ? refLink(code) : "";
+
+  async function copy() {
+    try { await navigator.clipboard.writeText(link); actions.showToast("Lien copié ✨"); }
+    catch { actions.showToast("Copie impossible"); }
+  }
+  async function share() {
+    if (navigator.share) {
+      try { await navigator.share({ title: "Rejoins ClipWar", text: "Gagne de l'argent en clippant 🎬", url: link }); } catch {}
+    } else copy();
+  }
+
+  return (
+    <>
+      <div className="sec-h" style={{ marginTop: 22 }}><h2>Parrainage</h2></div>
+      <div className="card" style={{ background: "linear-gradient(150deg,rgba(139,108,255,.14),rgba(45,226,230,.05)),var(--surf)", borderColor: "var(--line2)" }}>
+        <div style={{ fontWeight: 700, fontSize: 15 }}>Invite tes amis, gagne {REF_BONUS} € par filleul 🎁</div>
+        <div style={{ fontSize: 12.5, color: "var(--mut)", marginTop: 3 }}>
+          Tu touches {REF_BONUS} € dès qu&apos;un filleul atteint {fmt(REF_MILESTONE)} vues. Ton lien :
+        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+          <div className="mono" style={{ flex: 1, minWidth: 0, background: "var(--bg2)", border: "1px solid var(--line2)", borderRadius: 10, padding: "10px 12px", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{loading ? "…" : link}</div>
+          <button className="btn btn-gh" style={{ width: "auto", padding: "0 14px" }} onClick={copy} disabled={!code}>Copier</button>
+        </div>
+        <button className="btn btn-pri" style={{ marginTop: 9, padding: 12 }} onClick={share} disabled={!code}>Partager mon lien</button>
+
+        <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+          <div style={{ flex: 1, textAlign: "center", background: "var(--bg2)", borderRadius: 12, padding: "10px 6px" }}>
+            <div className="display" style={{ fontSize: 20 }}>{filleuls.length}</div><div style={{ fontSize: 11, color: "var(--mut)" }}>filleuls</div></div>
+          <div style={{ flex: 1, textAlign: "center", background: "var(--bg2)", borderRadius: 12, padding: "10px 6px" }}>
+            <div className="display" style={{ fontSize: 20 }}>{valides}</div><div style={{ fontSize: 11, color: "var(--mut)" }}>validés</div></div>
+          <div style={{ flex: 1, textAlign: "center", background: "var(--bg2)", borderRadius: 12, padding: "10px 6px" }}>
+            <div className="display" style={{ fontSize: 20, color: "var(--mint)" }}>{euro(bonus)}</div><div style={{ fontSize: 11, color: "var(--mut)" }}>bonus</div></div>
+        </div>
+      </div>
+
+      {filleuls.length > 0 && (
+        <div className="card" style={{ marginTop: 8 }}>
+          {filleuls.map((f) => {
+            const pct = Math.min(100, Math.round((f.vues_total / REF_MILESTONE) * 100));
+            return (
+              <div className="row" key={f.id}>
+                <Avatar url={f.avatar_url} name={f.name} size={36} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="t">{f.name} {f.reached && <span className="pill p-paid" style={{ marginLeft: 4 }}>validé · +{REF_BONUS}€</span>}</div>
+                  <div className="meter" style={{ marginTop: 6 }}><i style={{ width: pct + "%", background: f.reached ? "var(--mint)" : "var(--grad)" }} /></div>
+                </div>
+                <div className="end"><div className="vue mono" style={{ fontSize: 12.5 }}>{fmt(f.vues_total)}</div><div className="delta flat">/ {fmt(REF_MILESTONE)}</div></div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </>
   );
 }
