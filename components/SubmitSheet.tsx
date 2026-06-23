@@ -26,7 +26,7 @@ export default function SubmitSheet({
   const [url, setUrl] = useState("");
   const [plat, setPlat] = useState("tiktok");
   // attribution
-  const initialCamp = prefill?.campaignId || (campaigns[0]?.id ?? "");
+  const initialCamp = prefill?.campaignId || (campaigns.find((c) => c.is_active)?.id ?? "");
   const [campaignId, setCampaignId] = useState(initialCamp);
   const [assetId, setAssetId] = useState(prefill?.assetId ?? ""); // "" = clip original / sans asset
   const [busy, setBusy] = useState(false);
@@ -99,8 +99,8 @@ export default function SubmitSheet({
       <div className="field">
         <label>Campagne</label>
         <select value={campaignId} onChange={(e) => onCampaign(e.target.value)}>
-          {campaigns.length === 0 && <option value="">Aucune campagne disponible</option>}
-          {campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          {campaigns.filter((c) => c.is_active).length === 0 && <option value="">Aucune campagne disponible</option>}
+          {campaigns.filter((c) => c.is_active).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
         <div className="prefill">Indispensable pour savoir quel contenu a généré quelles vues.</div>
       </div>

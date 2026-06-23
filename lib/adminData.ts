@@ -24,7 +24,13 @@ export type AdmClip = {
   campaign_id: string | null; campaign_name: string | null; rate: number;
   asset_id: string | null; asset_title: string | null;
   platform: string; url: string; status: AdmClipStatus; submitted_at: string;
-  vues: number; net_7d: number; gain: number;
+  vues: number; net_7d: number; paid_views: number; due: number; gain: number;
+};
+
+export type AdmPayment = {
+  id: string; clipper_id: string; clipper_name: string | null;
+  period_start: string; period_end: string;
+  net_views: number; amount: number; status: string; created_at: string;
 };
 
 export type AdmDash = { vues_7: number; a_verser: number; clippers_actifs: number; pubs_7: number };
@@ -42,6 +48,7 @@ export type AdminData = {
   views7: AdmViewDay[];
   assets: AdmAsset[];
   fraud: AdmFraud[];
+  payments: AdmPayment[];
   loading: boolean;
   error: string | null;
   reload: () => Promise<void>;
@@ -57,6 +64,7 @@ export function useAdminData(enabled: boolean): AdminData {
   const [views7, setViews7] = useState<AdmViewDay[]>([]);
   const [assets, setAssets] = useState<AdmAsset[]>([]);
   const [fraud, setFraud] = useState<AdmFraud[]>([]);
+  const [payments, setPayments] = useState<AdmPayment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -65,16 +73,17 @@ export function useAdminData(enabled: boolean): AdminData {
     const sb = getSupabase();
     setLoading(true); setError(null);
 
-    const [dashR, clippersR, clipsR, viewsR, assetsR, fraudR] = await Promise.all([
+    const [dashR, clippersR, clipsR, viewsR, assetsR, fraudR, payR] = await Promise.all([
       sb.rpc("admin_dashboard"),
       sb.rpc("admin_clippers"),
       sb.rpc("admin_clips"),
       sb.rpc("admin_views_7d"),
       sb.rpc("admin_assets"),
       sb.rpc("admin_fraud"),
+      sb.rpc("admin_payments"),
     ]);
 
-    const firstErr = [dashR, clippersR, clipsR, viewsR, assetsR, fraudR].find((r) => r.error)?.error;
+    const firstErr = [dashR, clippersR, clipsR, viewsR, assetsR, fraudR, payR].find((r) => r.error)?.error;
     if (firstErr) setError(firstErr.message);
 
     const d = (dashR.data || [])[0];
@@ -92,7 +101,7 @@ export function useAdminData(enabled: boolean): AdminData {
       campaign_id: r.campaign_id, campaign_name: r.campaign_name, rate: n(r.rate),
       asset_id: r.asset_id, asset_title: r.asset_title,
       platform: r.platform, url: r.url, status: r.status, submitted_at: r.submitted_at,
-      vues: n(r.vues), net_7d: n(r.net_7d), gain: n(r.gain),
+      vues: n(r.vues), net_7d: n(r.net_7d), paid_views: n(r.paid_views), due: n(r.due), gain: n(r.gain),
     })));
 
     setViews7((viewsR.data || []).map((r: any) => ({ day: r.day, net: n(r.net) })));
@@ -103,13 +112,18 @@ export function useAdminData(enabled: boolean): AdminData {
       id: n(r.id), clip_id: r.clip_id, kind: r.kind, detail: r.detail, resolved: !!r.resolved,
       created_at: r.created_at, clipper_name: r.clipper_name, platform: r.platform, asset_title: r.asset_title,
     })));
+    setPayments((payR.data || []).map((r: any) => ({
+      id: r.id, clipper_id: r.clipper_id, clipper_name: r.clipper_name,
+      period_start: r.period_start, period_end: r.period_end,
+      net_views: n(r.net_views), amount: n(r.amount), status: r.status, created_at: r.created_at,
+    })));
 
     setLoading(false);
   }, [enabled]);
 
   useEffect(() => { reload(); }, [reload]);
 
-  return { dash, clippers, clips, views7, assets, fraud, loading, error, reload };
+  return { dash, clippers, clips, views7, assets, fraud, payments, loading, error, reload };
 }
 
 // libellé court pour un type d'alerte anti-triche
