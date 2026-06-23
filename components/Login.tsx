@@ -123,3 +123,48 @@ export default function Login() {
     </div>
   );
 }
+
+/* ───────────── Écran « Choisis un nouveau mot de passe » ─────────────
+   Affiché par AppShell quand l'utilisateur arrive via un lien de
+   récupération (événement PASSWORD_RECOVERY). */
+export function SetNewPassword({ onDone }: { onDone: () => void }) {
+  const [pwd, setPwd] = useState("");
+  const [pwd2, setPwd2] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function save() {
+    if (pwd.length < 6) { setErr("Mot de passe : 6 caractères minimum."); return; }
+    if (pwd !== pwd2) { setErr("Les deux mots de passe ne correspondent pas."); return; }
+    setBusy(true); setErr(null);
+    const { error } = await getSupabase().auth.updateUser({ password: pwd });
+    setBusy(false);
+    if (error) { setErr(error.message); return; }
+    onDone();
+  }
+
+  return (
+    <div className="shell">
+      <div className="auth-wrap">
+        <img className="logo-img big" src="/clipwar-logo.png" alt="ClipWar" style={{ margin: "0 auto" }} />
+        <div className="auth-card">
+          <h2>Nouveau mot de passe</h2>
+          <div className="auth-sub">Choisis le mot de passe que tu utiliseras pour te connecter.</div>
+          <div className="field" style={{ marginTop: 16 }}>
+            <label>Nouveau mot de passe</label>
+            <input type="password" placeholder="6 caractères minimum" value={pwd}
+              onChange={(e) => setPwd(e.target.value)} />
+          </div>
+          <div className="field">
+            <label>Confirme</label>
+            <input type="password" placeholder="Retape le mot de passe" value={pwd2}
+              onChange={(e) => setPwd2(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") save(); }} />
+          </div>
+          <button className="btn btn-pri" style={{ marginTop: 16, padding: 13 }} onClick={save} disabled={busy}>{busy ? "…" : "Enregistrer & entrer"}</button>
+          {err && <div className="auth-err">{err}</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
