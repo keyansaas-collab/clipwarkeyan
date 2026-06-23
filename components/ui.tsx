@@ -21,11 +21,20 @@ export function Icon({ name }: { name: string }) {
   );
 }
 
-export function Hud({ name, sub, rank }: { name: string; sub: string; rank: string }) {
+export function Avatar({ url, name, size = 40, square = false }: { url?: string | null; name?: string | null; size?: number; square?: boolean }) {
+  const initial = (name || "?").trim()[0]?.toUpperCase() || "?";
+  const radius = square ? Math.round(size * 0.28) : size / 2;
+  if (url) {
+    return <img src={url} alt={name || ""} className="avatar-img" style={{ width: size, height: size, borderRadius: radius }} />;
+  }
+  return <div className="ava" style={{ width: size, height: size, borderRadius: radius, fontSize: Math.round(size * 0.42) }}>{initial}</div>;
+}
+
+export function Hud({ name, sub, rank, avatarUrl }: { name: string; sub: string; rank: string; avatarUrl?: string | null }) {
   return (
     <div className="hud">
       <div className="hud-top">
-        <div className="ava">{name[0]}</div>
+        <Avatar url={avatarUrl} name={name} size={44} square />
         <div>
           <div className="hud-name">{name}</div>
           <div className="hud-sub">{sub}</div>
