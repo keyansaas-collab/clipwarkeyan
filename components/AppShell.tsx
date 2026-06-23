@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import { Icon } from "./ui";
 import Clipper, { ClipActions } from "./Clipper";
 import Admin, { AdmActions } from "./Admin";
-import Login from "./Login";
+import Login, { SetNewPassword } from "./Login";
 import Onboarding from "./Onboarding";
 import SubmitSheet, { SubmitPrefill } from "./SubmitSheet";
 import { getSupabase } from "@/lib/supabase/client";
@@ -14,11 +14,12 @@ import { useArena } from "@/lib/arena";
 
 type Role = "clip" | "adm";
 type NavLink = { id: string; label: string; icon: string };
-type Profile = { display_name: string | null; role: string; rank: string | null; onboarded?: boolean };
+type Profile = { display_name: string | null; role: string; rank: string | null; onboarded?: boolean; avatar_url?: string | null };
 
 export default function AppShell() {
   // ── auth ──
   const [session, setSession] = useState<any>(undefined); // undefined = chargement
+  const [recovery, setRecovery] = useState(false); // arrivée via lien "mot de passe oublié"
   const [profile, setProfile] = useState<Profile | null>(null);
 
   // ── app ──
@@ -37,11 +38,14 @@ export default function AppShell() {
   // ── arena RÉELLE (challenges + classement), partagée clipper + admin ──
   const arena = useArena(!!session);
 
-  // récupère la session + écoute les changements (login / logout)
+  // récupère la session + écoute les changements (login / logout / récupération)
   useEffect(() => {
     const sb = getSupabase();
     sb.auth.getSession().then(({ data }) => setSession(data.session ?? null));
-    const { data: sub } = sb.auth.onAuthStateChange((_e, s) => setSession(s ?? null));
+    const { data: sub } = sb.auth.onAuthStateChange((e, s) => {
+      if (e === "PASSWORD_RECOVERY") setRecovery(true);
+      setSession(s ?? null);
+    });
     return () => sub.subscription.unsubscribe();
   }, []);
 
@@ -50,7 +54,7 @@ export default function AppShell() {
     if (!session) { setProfile(null); return; }
     getSupabase()
       .from("profiles")
-      .select("display_name, role, rank, onboarded")
+      .select("display_name, role, rank, onboarded, avatar_url")
       .eq("id", session.user.id)
       .maybeSingle()
       .then(({ data }) => setProfile((data as Profile) ?? { display_name: null, role: "clipper", rank: null, onboarded: false }));
@@ -198,6 +202,7 @@ export default function AppShell() {
     );
   }
   if (!session) return <Login />;
+  if (recovery) return <SetNewPassword onDone={() => setRecovery(false)} />;
 
   if (!profile) {
     return (
@@ -298,8 +303,8 @@ export default function AppShell() {
           <button className="logout" onClick={logout}>Quitter</button>
         </div>
         {role === "clip"
-          ? <Clipper tab={tab} camp={camp} clipDetail={clipDetail} clips={clips} catalog={catalog} arena={arena} userName={profile.display_name || session.user.email} userEmail={session.user.email} userId={session.user.id} reloadProfile={loadProfile} actions={clipActions} />
-          : <Admin tab={tab} actions={admActions} catalog={catalog} arena={arena} isOwner={profile?.role === "owner"} userName={profile.display_name || session.user.email} clipperId={admClipper} payClipper={payClipper} />}
+          ? <Clipper tab={tab} camp={camp} clipDetail={clipDetail} clips={clips} catalog={catalog} arena={arena} userName={profile.display_name || session.user.email} userEmail={session.user.email} userId={session.user.id} userAvatar={profile.avatar_url} reloadProfile={loadProfile} actions={clipActions} />
+          : <Admin tab={tab} actions={admActions} catalog={catalog} arena={arena} isOwner={profile?.role === "owner"} userName={profile.display_name || session.user.email} userAvatar={profile.avatar_url} clipperId={admClipper} payClipper={payClipper} />}
       </div>
 
       {/* ── nav du bas (mobile) ── */}
