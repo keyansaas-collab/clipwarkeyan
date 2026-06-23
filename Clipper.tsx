@@ -7,7 +7,7 @@ import {
   platLabel, fmt, euro, MyClip,
 } from "@/lib/data";
 import { Catalog, AssetReal, initialsOf } from "@/lib/catalog";
-import { Arena, BoardRow, endsLabel } from "@/lib/arena";
+import { Arena, BoardRow, endsLabel, rewardText, kindLabel } from "@/lib/arena";
 
 export type ClipActions = {
   go: (tab: string) => void;
@@ -82,13 +82,19 @@ function Home({ clips, name, place, arena, actions }: { clips: MyClip[]; name: s
           <div className="rail">
             {liveChallenges.map((c) => {
               const pct = c.goal_views ? Math.min(100, Math.round((c.progress / c.goal_views) * 100)) : 0;
+              const unit = c.metric === "clips" ? "clips" : "vues";
               return (
                 <div className={"chal " + (c.kind === "collectif" ? "c2" : "")} key={c.id}>
                   <span className="badge"><span className="dot" />{endsLabel(c.ends_at)}</span>
                   <h3>{c.title}</h3>
-                  <div className="meta">{c.kind === "collectif" ? "Objectif collectif" : "Sprint individuel"}{c.campaign_name ? " · " + c.campaign_name : ""}</div>
-                  <div className="bar"><i style={{ width: pct + "%" }} /></div>
-                  <div className="reward">{fmt(c.progress)}{c.goal_views ? ` / ${fmt(c.goal_views)} vues` : " vues"}{c.pot ? ` · ${euro(c.pot)}` : ""}</div>
+                  <div className="meta">{kindLabel[c.kind]}{c.campaign_name ? " · " + c.campaign_name : ""}</div>
+                  <div style={{ margin: "6px 0" }}><span className="pill p-paid">🎁 {rewardText(c)}</span></div>
+                  {c.metric !== "manual" && c.goal_views ? (
+                    <><div className="bar"><i style={{ width: pct + "%" }} /></div>
+                    <div className="reward">{fmt(c.progress)} / {fmt(c.goal_views)} {unit}</div></>
+                  ) : (
+                    <div className="reward">{c.metric === "manual" ? "Le meilleur gagne — montre ton talent" : `${fmt(c.progress)} ${unit}`}</div>
+                  )}
                 </div>
               );
             })}

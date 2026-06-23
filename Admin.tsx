@@ -5,7 +5,7 @@ import { Hud } from "./ui";
 import { getSupabase } from "@/lib/supabase/client";
 import { fmt, euro, platLabel, agoLabel } from "@/lib/data";
 import { Catalog, AssetReal, campNameOf, campGradOf, initialsOf } from "@/lib/catalog";
-import { Arena, ArenaChallenge, endsLabel } from "@/lib/arena";
+import { Arena, ArenaChallenge, endsLabel, rewardText, metricLabel, kindLabel, fetchChallengeBoard, awardChallenge } from "@/lib/arena";
 import {
   useAdminData, AdminData, AdmClipper, AdmClip, AdmAsset, AdmViewDay,
   fraudLabel, fraudIcon,
@@ -312,30 +312,73 @@ function Campaigns({ catalog, actions }: { catalog: Catalog; actions: AdmActions
   );
 }
 
-/* ───────────── CHALLENGES (réels) ───────────── */
+/* ───────────── CHALLENGES (réels v2) ───────────── */
 function AdminChallengeCard({ ch, onChanged, actions }: { ch: ArenaChallenge; onChanged: () => void; actions: AdmActions }) {
-  const [confirm, setConfirm] = useState(false);
+  const [mode, setMode] = useState<"idle" | "confirmDel" | "close">("idle");
   const [busy, setBusy] = useState(false);
+  const [board, setBoard] = useState<{ clipper_id: string; name: string; score: number }[] | null>(null);
   const pct = ch.goal_views ? Math.min(100, Math.round((ch.progress / ch.goal_views) * 100)) : 0;
+  const unit = ch.metric === "clips" ? "clips" : "vues";
+
+  async function openClose() {
+    setMode("close"); setBoard(null);
+    setBoard(await fetchChallengeBoard(ch.id));
+  }
+  async function award(winner: string | null) {
+    setBusy(true);
+    await awardChallenge(ch.id, winner);
+    setBusy(false); setMode("idle"); onChanged();
+    actions.showToast(winner ? "Gagnant désigné · prime à remettre" : "Challenge clôturé");
+  }
   async function del() {
     setBusy(true);
     await getSupabase().from("challenges").delete().eq("id", ch.id);
     setBusy(false); onChanged();
   }
+
   return (
-    <div className={"chal " + (ch.kind === "collectif" ? "c2" : "")} style={{ minWidth: 0, marginTop: 12, opacity: ch.active ? 1 : 0.6 }}>
-      <span className="badge"><span className="dot" />{ch.active ? endsLabel(ch.ends_at) : "Terminé"}</span>
+    <div className={"chal " + (ch.kind === "collectif" ? "c2" : "")} style={{ minWidth: 0, marginTop: 12, opacity: ch.active ? 1 : 0.72 }}>
+      <span className="badge"><span className="dot" />{ch.awarded_at ? "Clôturé" : ch.active ? endsLabel(ch.ends_at) : "Terminé"}</span>
       <h3>{ch.title}</h3>
-      <div className="meta">{ch.kind === "collectif" ? "Objectif collectif" : "Sprint individuel"}{ch.campaign_name ? " · " + ch.campaign_name : " · toutes campagnes"} · {ch.participants} clipper{ch.participants > 1 ? "s" : ""}</div>
-      <div className="bar"><i style={{ width: pct + "%" }} /></div>
-      <div className="reward">{fmt(ch.progress)}{ch.goal_views ? ` / ${fmt(ch.goal_views)} vues (${pct}%)` : " vues"}{ch.pot ? ` · ${euro(ch.pot)}` : ""}</div>
-      {confirm ? (
+      <div className="meta">{kindLabel[ch.kind]} · {metricLabel[ch.metric]}{ch.campaign_name ? " · " + ch.campaign_name : " · toutes campagnes"} · {ch.participants} clipper{ch.participants > 1 ? "s" : ""}</div>
+
+      <div style={{ margin: "8px 0 4px" }}><span className="pill p-paid">🎁 {rewardText(ch)}</span></div>
+
+      {ch.metric !== "manual" && ch.goal_views ? (
+        <>
+          <div className="bar"><i style={{ width: pct + "%" }} /></div>
+          <div className="reward">{fmt(ch.progress)} / {fmt(ch.goal_views)} {unit} ({pct}%)</div>
+        </>
+      ) : (
+        <div className="reward">{ch.metric === "manual" ? "Jugé manuellement" : `${fmt(ch.progress)} ${unit} cumulés`}</div>
+      )}
+
+      {ch.awarded_at ? (
+        <div style={{ marginTop: 8, fontSize: 12.5 }}>
+          {ch.winner_name ? <>🏆 Gagnant : <b>{ch.winner_name}</b> — <span style={{ color: "var(--mint)" }}>prime à remettre ({rewardText(ch)})</span></> : "Clôturé sans gagnant unique."}
+        </div>
+      ) : mode === "close" ? (
+        <div style={{ marginTop: 10 }}>
+          <div style={{ fontSize: 12, color: "var(--mut)", marginBottom: 6 }}>Désigne le gagnant :</div>
+          {board === null ? <div className="empty" style={{ padding: 8 }}>Chargement…</div>
+            : board.length ? board.slice(0, 6).map((b, i) => (
+              <button key={b.clipper_id} className="btn btn-gh" style={{ padding: 10, marginBottom: 6, display: "flex", justifyContent: "space-between" }} disabled={busy} onClick={() => award(b.clipper_id)}>
+                <span>{i + 1}. {b.name}</span><span className="mono">{fmt(b.score)} {unit}</span>
+              </button>
+            )) : <div className="empty" style={{ padding: 8 }}>Aucun participant mesuré.</div>}
+          <button className="btn btn-gh" style={{ padding: 10, marginTop: 4 }} disabled={busy} onClick={() => award(null)}>Clôturer sans gagnant unique</button>
+          <button className="btn btn-gh" style={{ padding: 8, marginTop: 6, fontSize: 12 }} onClick={() => setMode("idle")}>Annuler</button>
+        </div>
+      ) : mode === "confirmDel" ? (
         <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
           <button className="btn btn-pri" style={{ padding: 8, background: "var(--coral)" }} disabled={busy} onClick={del}>Supprimer</button>
-          <button className="btn btn-gh" style={{ padding: 8 }} onClick={() => setConfirm(false)}>Annuler</button>
+          <button className="btn btn-gh" style={{ padding: 8 }} onClick={() => setMode("idle")}>Annuler</button>
         </div>
       ) : (
-        <div style={{ textAlign: "right", marginTop: 8 }}><span style={{ fontSize: 11.5, color: "var(--mut2)", cursor: "pointer" }} onClick={() => setConfirm(true)}>Supprimer</span></div>
+        <div style={{ display: "flex", gap: 14, justifyContent: "flex-end", marginTop: 10 }}>
+          <span style={{ fontSize: 12, color: "var(--cyan)", cursor: "pointer", fontWeight: 600 }} onClick={openClose}>Clôturer &amp; primer</span>
+          <span style={{ fontSize: 12, color: "var(--mut2)", cursor: "pointer" }} onClick={() => setMode("confirmDel")}>Supprimer</span>
+        </div>
       )}
     </div>
   );
@@ -346,16 +389,16 @@ function Challenges({ arena, actions }: { arena: Arena; actions: AdmActions }) {
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14 }}>
-        <div><div className="eyebrow">Courses temporaires</div><h2 className="display" style={{ fontSize: 22, marginTop: 4 }}>Challenges</h2></div>
+        <div><div className="eyebrow">Courses & primes</div><h2 className="display" style={{ fontSize: 22, marginTop: 4 }}>Challenges</h2></div>
         <button className="btn btn-pri adm-actionbtn" onClick={actions.openNewChallenge}>+ Nouveau</button>
       </div>
       {arena.loading && <div className="card" style={{ marginTop: 12 }}><div className="empty">Chargement…</div></div>}
       {!arena.loading && arena.challenges.length === 0 && (
-        <div className="card" style={{ marginTop: 12 }}><div className="empty">Aucun challenge. Lance le premier avec « + Nouveau ».</div></div>
+        <div className="card" style={{ marginTop: 12 }}><div className="empty">Aucun challenge. Lance le premier avec « + Nouveau » — vues, clips, ou jugé à la main, avec une prime à la clé.</div></div>
       )}
       {arena.challenges.map((ch) => <AdminChallengeCard key={ch.id} ch={ch} actions={actions} onChanged={arena.reload} />)}
 
-      <div className="sec-h"><h2>Classement (vues nettes · 7 j)</h2></div>
+      <div className="sec-h"><h2>Classement général (vues nettes · 7 j)</h2></div>
       <div className="card">
         {top.length ? top.map((c, i) => (
           <div className="row" key={c.id}>

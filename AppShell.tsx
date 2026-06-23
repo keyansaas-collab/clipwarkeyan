@@ -173,6 +173,18 @@ export default function AppShell() {
   function openImport() {
     setSheet(<ImportAssetForm campaigns={catalog.campaigns} onCancel={closeSheet} onCreated={() => { closeSheet(); showToast("Asset ajouté au catalogue"); catalog.reload(); }} />);
   }
+  function openCreate() {
+    setSheet(
+      <>
+        <h3>Créer</h3>
+        <p style={{ color: "var(--mut)", fontSize: 13 }}>Que veux-tu lancer ?</p>
+        <button className="btn btn-pri" style={{ marginTop: 14, padding: 14, display: "flex", alignItems: "center", gap: 10, justifyContent: "flex-start" }} onClick={openNewChallenge}><Icon name="trophy" /><span>Nouveau challenge</span></button>
+        <button className="btn btn-gh" style={{ marginTop: 10, padding: 14, display: "flex", alignItems: "center", gap: 10, justifyContent: "flex-start" }} onClick={openNewCampaign}><Icon name="folder" /><span>Nouvelle campagne</span></button>
+        <button className="btn btn-gh" style={{ marginTop: 10, padding: 14, display: "flex", alignItems: "center", gap: 10, justifyContent: "flex-start" }} onClick={openImport}><Icon name="grid" /><span>Importer un asset</span></button>
+        <button className="btn btn-gh" style={{ marginTop: 14, padding: 12 }} onClick={closeSheet}>Annuler</button>
+      </>
+    );
+  }
 
   // ── gating auth ──
   if (session === undefined) {
@@ -230,8 +242,8 @@ export default function AppShell() {
   const mobileLinks: NavLink[] = adm
     ? [navLinks[0], navLinks[1], navLinks[2], MENU_ITEM]
     : [navLinks[0], navLinks[1], navLinks[2], MENU_ITEM];
-  const fabLabel = adm ? "Importer un asset" : "Soumettre un clip";
-  const fabAction = adm ? () => openImport() : () => openSubmit();
+  const fabLabel = adm ? "Créer" : "Soumettre un clip";
+  const fabAction = adm ? () => openCreate() : () => openSubmit();
 
   // menu mobile : toutes les sections (celles qui ne tiennent pas dans la barre du bas)
   function openSections() {
@@ -471,31 +483,46 @@ function ImportAssetForm({ campaigns, onCancel, onCreated }: { campaigns: import
   );
 }
 
-/* ─────────── Formulaire : nouveau challenge (écriture réelle) ─────────── */
+/* ─────────── Formulaire : nouveau challenge v2 (modulable) ─────────── */
 function ChallengeForm({ campaigns, onCancel, onDone }: { campaigns: import("@/lib/catalog").CampaignReal[]; onCancel: () => void; onDone: () => void }) {
   const [title, setTitle] = useState("");
   const [campaignId, setCampaignId] = useState<string>("");
-  const [kind, setKind] = useState<"collectif" | "sprint">("collectif");
+  const [metric, setMetric] = useState<"views" | "clips" | "manual">("views");
+  const [kind, setKind] = useState<"collectif" | "sprint" | "palier">("sprint");
   const [goal, setGoal] = useState("1000000");
+  const [rewardType, setRewardType] = useState<"cash" | "cadeau" | "bonus" | "autre">("cash");
   const [pot, setPot] = useState("");
-  const [days, setDays] = useState("2");
+  const [rewardLabel, setRewardLabel] = useState("");
+  const [dur, setDur] = useState("today");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  const needsGoal = metric !== "manual" && kind !== "sprint"; // sprint = classement, pas de seuil ; manual = jugé
+  const goalLabel = metric === "clips" ? "Objectif de clips" : "Objectif de vues";
+
   async function create() {
     if (!title.trim()) { setErr("Donne un nom au challenge."); return; }
-    const goalNum = parseInt(goal.replace(/\s/g, ""), 10);
-    if (!isFinite(goalNum) || goalNum <= 0) { setErr("Objectif de vues invalide."); return; }
     setBusy(true); setErr(null);
-    const ends = new Date(Date.now() + parseFloat(days) * 864e5).toISOString();
+    let goalNum: number | null = null;
+    if (needsGoal) {
+      goalNum = parseInt(goal.replace(/\s/g, ""), 10);
+      if (!isFinite(goalNum) || goalNum <= 0) { setBusy(false); setErr("Objectif invalide."); return; }
+    }
+    const now = new Date();
+    let ends = new Date();
+    if (dur === "today") { ends.setHours(23, 59, 59, 0); }
+    else ends = new Date(Date.now() + parseFloat(dur) * 864e5);
+
     const { error } = await getSupabase().from("challenges").insert({
       title: title.trim(),
       campaign_id: campaignId || null,
-      kind,
-      goal_views: goalNum,
+      kind, metric,
+      reward_type: rewardType,
+      reward_label: rewardLabel.trim() || null,
       pot: pot ? parseFloat(pot.replace(",", ".")) : null,
-      starts_at: new Date().toISOString(),
-      ends_at: ends,
+      goal_views: goalNum,
+      starts_at: now.toISOString(),
+      ends_at: ends.toISOString(),
     });
     setBusy(false);
     if (error) { setErr(error.message); return; }
@@ -505,29 +532,67 @@ function ChallengeForm({ campaigns, onCancel, onDone }: { campaigns: import("@/l
   return (
     <>
       <h3>Nouveau challenge</h3>
-      <p style={{ color: "var(--mut)", fontSize: 13 }}>Une course temporaire posée sur une campagne (ou sur tout le catalogue).</p>
-      <div className="field"><label>Nom</label><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Ex. Sprint Lifestyle 48h" /></div>
+      <p style={{ color: "var(--mut)", fontSize: 13 }}>Rends-le ludique : choisis ce qu&apos;on mesure, le format et la prime.</p>
+
+      <div className="field"><label>Nom</label><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Ex. Le plus de clips aujourd'hui 🔥" /></div>
+
+      <div className="field"><label>On mesure</label>
+        <select value={metric} onChange={(e) => setMetric(e.target.value as any)}>
+          <option value="views">Vues nettes</option>
+          <option value="clips">Nombre de clips postés</option>
+          <option value="manual">Jugé manuellement (meilleur montage, plus drôle…)</option>
+        </select>
+        {metric === "manual" && <div className="prefill">Tu désigneras le gagnant à la clôture (rien à mesurer automatiquement).</div>}
+      </div>
+
+      <div className="field"><label>Format</label>
+        <select value={kind} onChange={(e) => setKind(e.target.value as any)}>
+          <option value="sprint">Course / classement — le meilleur gagne</option>
+          <option value="collectif">Objectif collectif — la commu atteint le but</option>
+          <option value="palier">Palier — chacun qui atteint le seuil gagne</option>
+        </select>
+      </div>
+
       <div className="field"><label>Campagne</label>
         <select value={campaignId} onChange={(e) => setCampaignId(e.target.value)}>
           <option value="">Toutes les campagnes</option>
           {campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select></div>
-      <div className="field"><label>Type</label>
-        <select value={kind} onChange={(e) => setKind(e.target.value as "collectif" | "sprint")}>
-          <option value="collectif">Objectif collectif</option>
-          <option value="sprint">Sprint individuel</option>
-        </select></div>
-      <div className="field"><label>Objectif de vues</label><input value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="Ex. 1000000" /></div>
-      <div className="field"><label>Cagnotte / récompense (€, optionnel)</label><input value={pot} onChange={(e) => setPot(e.target.value)} placeholder="Ex. 400" /></div>
+
+      {needsGoal && (
+        <div className="field"><label>{goalLabel}</label><input value={goal} onChange={(e) => setGoal(e.target.value)} placeholder={metric === "clips" ? "Ex. 50" : "Ex. 1000000"} /></div>
+      )}
+
+      <div className="field"><label>Type de prime</label>
+        <select value={rewardType} onChange={(e) => setRewardType(e.target.value as any)}>
+          <option value="cash">Cash (€)</option>
+          <option value="cadeau">Cadeau (objet, place…)</option>
+          <option value="bonus">Bonus sur la paie</option>
+          <option value="autre">Autre</option>
+        </select>
+        <div className="prefill">La prime est <b>hors payout normal</b> — tu la remets toi-même au gagnant.</div>
+      </div>
+
+      {rewardType === "cash" || rewardType === "bonus" ? (
+        <div className="field"><label>Montant (€)</label><input value={pot} onChange={(e) => setPot(e.target.value)} placeholder="Ex. 200" /></div>
+      ) : (
+        <div className="field"><label>Récompense</label><input value={rewardLabel} onChange={(e) => setRewardLabel(e.target.value)} placeholder="Ex. AirPods Pro, place de concert…" /></div>
+      )}
+      {(rewardType === "cash" || rewardType === "bonus") && (
+        <div className="field"><label>Précision (optionnel)</label><input value={rewardLabel} onChange={(e) => setRewardLabel(e.target.value)} placeholder="Ex. versé sur PayPal, +20% ce mois…" /></div>
+      )}
+
       <div className="field"><label>Durée</label>
-        <select value={days} onChange={(e) => setDays(e.target.value)}>
+        <select value={dur} onChange={(e) => setDur(e.target.value)}>
+          <option value="today">Aujourd&apos;hui (jusqu&apos;à minuit)</option>
           <option value="1">24 heures</option>
           <option value="2">48 heures</option>
           <option value="7">7 jours</option>
           <option value="14">14 jours</option>
           <option value="30">30 jours</option>
         </select></div>
-      <button className="btn btn-pri" style={{ marginTop: 18, padding: 14 }} onClick={create} disabled={busy}>{busy ? "Création…" : "Créer le challenge"}</button>
+
+      <button className="btn btn-pri" style={{ marginTop: 18, padding: 14 }} onClick={create} disabled={busy}>{busy ? "Création…" : "Lancer le challenge"}</button>
       <button className="btn btn-gh" style={{ marginTop: 9, padding: 12 }} onClick={onCancel}>Annuler</button>
       {err && <div className="auth-err">{err}</div>}
     </>
