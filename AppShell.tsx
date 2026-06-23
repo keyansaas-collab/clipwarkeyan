@@ -226,9 +226,30 @@ export default function AppShell() {
         { id: "classement", label: "Classement", icon: "trophy" },
         { id: "profil", label: "Profil", icon: "user" },
       ];
-  const mobileLinks: NavLink[] = adm ? [navLinks[0], navLinks[1], navLinks[2], navLinks[7]] : navLinks.slice(0, 4);
+  const MENU_ITEM: NavLink = { id: "_menu", label: "Plus", icon: "grid" };
+  const mobileLinks: NavLink[] = adm
+    ? [navLinks[0], navLinks[1], navLinks[2], MENU_ITEM]
+    : [navLinks[0], navLinks[1], navLinks[2], MENU_ITEM];
   const fabLabel = adm ? "Importer un asset" : "Soumettre un clip";
   const fabAction = adm ? () => openImport() : () => openSubmit();
+
+  // menu mobile : toutes les sections (celles qui ne tiennent pas dans la barre du bas)
+  function openSections() {
+    setSheet(
+      <>
+        <h3>Sections</h3>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 12 }}>
+          {navLinks.map((it) => (
+            <button key={it.id} className={"btn " + (tab === it.id ? "btn-pri" : "btn-gh")}
+              style={{ padding: 14, display: "flex", alignItems: "center", gap: 10, justifyContent: "flex-start" }}
+              onClick={() => { closeSheet(); go(it.id); }}>
+              <Icon name={it.icon} /><span>{it.label}</span>
+            </button>
+          ))}
+        </div>
+      </>
+    );
+  }
 
   // sélecteur d'aperçu : visible uniquement pour le staff
   const PreviewSwitch = () => (
@@ -278,9 +299,15 @@ export default function AppShell() {
                 <div className={"fab " + (adm ? "adm" : "")} onClick={fabAction}><Icon name="plus" /></div>
               </div>
             )}
-            <a className={tab === it.id ? "on " + (adm ? "adm" : "") : ""} onClick={() => go(it.id)}>
-              <Icon name={it.icon} /><span>{it.label}</span>
-            </a>
+            {it.id === "_menu" ? (
+              <a className={mobileLinks.some((m) => m.id === tab) ? "" : "on " + (adm ? "adm" : "")} onClick={openSections}>
+                <Icon name={it.icon} /><span>{it.label}</span>
+              </a>
+            ) : (
+              <a className={tab === it.id ? "on " + (adm ? "adm" : "") : ""} onClick={() => go(it.id)}>
+                <Icon name={it.icon} /><span>{it.label}</span>
+              </a>
+            )}
           </React.Fragment>
         ))}
       </div>
