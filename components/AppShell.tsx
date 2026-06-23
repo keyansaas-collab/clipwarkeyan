@@ -11,6 +11,7 @@ import { getSupabase } from "@/lib/supabase/client";
 import { platLabel, MyClip } from "@/lib/data";
 import { useCatalog, AssetReal } from "@/lib/catalog";
 import { useArena } from "@/lib/arena";
+import { useNotifications, agoShort, notifEmoji } from "@/lib/notifications";
 
 type Role = "clip" | "adm";
 type NavLink = { id: string; label: string; icon: string };
@@ -37,6 +38,8 @@ export default function AppShell() {
   const catalog = useCatalog(!!session);
   // ── arena RÉELLE (challenges + classement), partagée clipper + admin ──
   const arena = useArena(!!session);
+  // ── notifications (cloche) ──
+  const notifs = useNotifications(!!session);
 
   // récupère la session + écoute les changements (login / logout / récupération)
   useEffect(() => {
@@ -190,6 +193,37 @@ export default function AppShell() {
     );
   }
 
+  function openNotifs() {
+    notifs.markAllRead();
+    setSheet(
+      <>
+        <h3>Notifications</h3>
+        {notifs.loading ? <div className="empty">Chargement…</div>
+          : notifs.items.length === 0 ? <div className="empty" style={{ padding: "20px 8px" }}>Rien pour l&apos;instant. Tes alertes (clips, paiements, challenges) apparaîtront ici.</div>
+          : <div style={{ marginTop: 6 }}>{notifs.items.map((nf) => (
+              <div key={nf.id} className="card" style={{ marginBottom: 8, display: "flex", gap: 11, alignItems: "flex-start", cursor: nf.link_tab ? "pointer" : "default", opacity: nf.read ? 0.7 : 1 }}
+                onClick={() => { if (nf.link_tab) { closeSheet(); go(nf.link_tab); } }}>
+                <div style={{ fontSize: 20, lineHeight: "24px" }}>{notifEmoji[nf.kind] || "🔔"}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13.5 }}>{nf.title}</div>
+                  {nf.body && <div style={{ fontSize: 12.5, color: "var(--mut)", marginTop: 2 }}>{nf.body}</div>}
+                  <div style={{ fontSize: 11, color: "var(--mut2)", marginTop: 4 }}>{agoShort(nf.created_at)}</div>
+                </div>
+              </div>
+            ))}</div>}
+      </>
+    );
+  }
+
+  // toast à l'ouverture s'il y a du nouveau (mode "maximal")
+  const toastedRef = React.useRef(false);
+  useEffect(() => {
+    if (!toastedRef.current && !notifs.loading && notifs.unread > 0) {
+      toastedRef.current = true;
+      showToast(`🔔 ${notifs.unread} nouveaut\u00e9${notifs.unread > 1 ? "s" : ""}`);
+    }
+  }, [notifs.loading, notifs.unread]);
+
   // ── gating auth ──
   if (session === undefined) {
     return (
@@ -291,6 +325,10 @@ export default function AppShell() {
           ))}
         </nav>
         <div className="side-foot">
+          <button className="bell side-bell" onClick={openNotifs} aria-label="Notifications">
+            <Icon name="bell" /><span>Notifications</span>
+            {notifs.unread > 0 && <span className="bell-dot">{notifs.unread > 9 ? "9+" : notifs.unread}</span>}
+          </button>
           <div className="side-user">{profile?.display_name || session.user.email}</div>
           <button className="logout" onClick={logout}>Se déconnecter</button>
         </div>
@@ -300,6 +338,10 @@ export default function AppShell() {
       <div className="main">
         <div className="mobtop mobile-only">
           {isStaff ? <PreviewSwitch /> : <div style={{ flex: 1, fontSize: 12, color: "var(--mut)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{profile?.display_name || session.user.email}</div>}
+          <button className="bell" onClick={openNotifs} aria-label="Notifications">
+            <Icon name="bell" />
+            {notifs.unread > 0 && <span className="bell-dot">{notifs.unread > 9 ? "9+" : notifs.unread}</span>}
+          </button>
           <button className="logout" onClick={logout}>Quitter</button>
         </div>
         {role === "clip"

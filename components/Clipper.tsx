@@ -58,8 +58,25 @@ function Home({ clips, name, place, arena, actions }: { clips: MyClip[]; name: s
   const feu = [...clips].filter((c) => c.d7 > 0).sort((a, b) => b.d7 - a.d7).slice(0, 3);
   const liveChallenges = arena.challenges.filter((c) => c.active);
 
+  // encart "tip" qui pousse à l'action (le plus pertinent)
+  const tip = (() => {
+    if (clips.length === 0) return { ic: "🎬", t: "Poste ton premier clip", s: "Choisis un asset dans Campagnes et lance-toi.", go: "camp" };
+    const soonChallenge = liveChallenges.find((c) => c.ends_at && new Date(c.ends_at).getTime() - Date.now() < 864e5);
+    if (gain >= SEUIL) return { ic: "💰", t: "Seuil atteint — tu peux être payé !", s: `${euro(gain)} en attente. Continue sur ta lancée.`, go: "bilan" };
+    if (gain >= SEUIL * 0.5) return { ic: "🔥", t: `Plus que ${euro(SEUIL - gain)} pour le seuil`, s: "Tu y es presque — un clip de plus peut suffire.", go: "camp" };
+    if (vues7 === 0) return { ic: "⏰", t: "Tes clips dorment", s: "Poste un nouveau clip pour relancer tes vues.", go: "camp" };
+    if (soonChallenge) return { ic: "🏆", t: "Un challenge se termine bientôt", s: `${soonChallenge.title} — tente la prime.`, go: "home" };
+    return { ic: "🚀", t: "Continue à poster", s: "Plus tu clippes, plus tu montes au classement.", go: "camp" };
+  })();
+
   return (
     <>
+      <div className="tip" onClick={() => actions.go(tip.go)} style={{ cursor: "pointer" }}>
+        <div className="tip-ic">{tip.ic}</div>
+        <div style={{ flex: 1 }}><div className="tip-t">{tip.t}</div><div className="tip-s">{tip.s}</div></div>
+        <span style={{ color: "var(--mut)" }}>→</span>
+      </div>
+
       <div className="card" style={{ background: "linear-gradient(150deg,rgba(139,108,255,.2),rgba(45,226,230,.06)),var(--surf)", borderColor: "var(--line2)" }}>
         <div style={{ fontSize: 12, color: "var(--mut)", fontWeight: 600 }}>À recevoir</div>
         <div className="display" style={{ fontSize: 38, fontWeight: 700, margin: "4px 0", letterSpacing: "-1px" }}>{euro(gain)}</div>

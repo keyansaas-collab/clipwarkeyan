@@ -86,12 +86,15 @@ function ClipRowLink({ c, showClipper }: { c: AdmClip; showClipper?: boolean }) 
   );
 }
 
-/* ───────────── CLIPS (flux + filtres + tri) ───────────── */
-function ClipsFeed({ data, catalog }: { data: AdminData; catalog: Catalog }) {
+/* ───────────── CLIPS (flux + filtres + tri + modération en masse) ───────────── */
+function ClipsFeed({ data, catalog, actions }: { data: AdminData; catalog: Catalog; actions: AdmActions }) {
   const [plat, setPlat] = useState("all");
   const [camp, setCamp] = useState("all");
   const [stat, setStat] = useState("all");
   const [sort, setSort] = useState("date");
+  const [selMode, setSelMode] = useState(false);
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
 
   let list = data.clips.filter((c) =>
     (plat === "all" || c.platform === plat) &&
@@ -102,10 +105,27 @@ function ClipsFeed({ data, catalog }: { data: AdminData; catalog: Catalog }) {
     sort === "vues" ? b.vues - a.vues : new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime()
   );
 
+  function toggle(id: string) {
+    setSel((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  }
+  function exitSel() { setSelMode(false); setSel(new Set()); }
+  async function bulk(status: "track" | "hold" | "rejected") {
+    if (!sel.size) return;
+    setBusy(true);
+    const { error } = await getSupabase().rpc("set_clips_status", { p_ids: Array.from(sel), p_status: status });
+    setBusy(false);
+    if (error) { actions.showToast("Action impossible"); return; }
+    const verb = status === "hold" ? "gelé" : status === "rejected" ? "refusé" : "réactivé";
+    actions.showToast(`${sel.size} clip${sel.size > 1 ? "s" : ""} ${verb}${status === "track" ? "" : "s"}`);
+    exitSel(); data.reload();
+  }
+
   return (
     <>
-      <div className="eyebrow" style={{ marginTop: 14 }}>Flux des publications</div>
-      <h2 className="display" style={{ fontSize: 22, margin: "4px 0 6px" }}>Clips</h2>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14 }}>
+        <div><div className="eyebrow">Flux des publications</div><h2 className="display" style={{ fontSize: 22, margin: "4px 0 0" }}>Clips</h2></div>
+        <button className="btn btn-gh adm-actionbtn" onClick={() => (selMode ? exitSel() : setSelMode(true))}>{selMode ? "Annuler" : "Sélectionner"}</button>
+      </div>
       <div className="adm-filters">
         <select value={plat} onChange={(e) => setPlat(e.target.value)}>
           <option value="all">Toutes plateformes</option><option value="tiktok">TikTok</option><option value="instagram">Instagram</option><option value="youtube">YouTube</option>
@@ -120,11 +140,32 @@ function ClipsFeed({ data, catalog }: { data: AdminData; catalog: Catalog }) {
           <option value="date">Trier : récent</option><option value="vues">Trier : vues</option>
         </select>
       </div>
-      <div style={{ fontSize: 12, color: "var(--mut)", margin: "2px 2px 8px" }}>{list.length} clip{list.length > 1 ? "s" : ""}</div>
-      <div className="card">
-        {data.loading ? <div className="empty">Chargement…</div>
-          : list.length ? list.map((c) => <ClipRowLink key={c.id} c={c} showClipper />) : <div className="empty">Aucun clip pour ces filtres.</div>}
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--mut)", margin: "2px 2px 8px" }}>
+        <span>{list.length} clip{list.length > 1 ? "s" : ""}</span>
+        {selMode && <span onClick={() => setSel(new Set(list.map((c) => c.id)))} style={{ color: "var(--cyan)", cursor: "pointer" }}>Tout sélectionner</span>}
       </div>
+      <div className="card" style={{ paddingBottom: selMode && sel.size ? 70 : undefined }}>
+        {data.loading ? <div className="empty">Chargement…</div>
+          : list.length ? list.map((c) => selMode ? (
+            <div key={c.id} className="row cliprow" onClick={() => toggle(c.id)} style={{ cursor: "pointer", background: sel.has(c.id) ? "rgba(45,226,230,.10)" : undefined, borderRadius: 10 }}>
+              <div style={{ width: 22, height: 22, borderRadius: 6, border: "2px solid " + (sel.has(c.id) ? "var(--cyan)" : "var(--line)"), background: sel.has(c.id) ? "var(--cyan)" : "transparent", color: "#0a0610", display: "grid", placeItems: "center", fontSize: 13, flexShrink: 0 }}>{sel.has(c.id) ? "✓" : ""}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="t" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.asset_title || "(contenu original)"}</div>
+                <div className="s">{c.clipper_name} · {platLabel[c.platform] || c.platform} <span className={"pill " + pillOf(c.status)[0]} style={{ marginLeft: 4 }}>{pillOf(c.status)[1]}</span></div>
+              </div>
+              <div className="end"><div className="vue">{fmt(c.vues)}</div></div>
+            </div>
+          ) : <ClipRowLink key={c.id} c={c} showClipper />) : <div className="empty">Aucun clip pour ces filtres.</div>}
+      </div>
+
+      {selMode && sel.size > 0 && (
+        <div className="bulkbar">
+          <span className="bulkbar-n">{sel.size} sélectionné{sel.size > 1 ? "s" : ""}</span>
+          <button className="btn btn-gh" disabled={busy} onClick={() => bulk("track")}>Réactiver</button>
+          <button className="btn btn-gh" disabled={busy} onClick={() => bulk("hold")}>Geler</button>
+          <button className="btn btn-gh" style={{ color: "var(--coral)" }} disabled={busy} onClick={() => bulk("rejected")}>Refuser</button>
+        </div>
+      )}
     </>
   );
 }
@@ -501,6 +542,26 @@ function Fraud({ data }: { data: AdminData }) {
 function Payments({ data, actions }: { data: AdminData; actions: AdmActions }) {
   const due = [...data.clippers].filter((c) => c.gain > 0).sort((a, b) => b.gain - a.gain);
   const totalPaid = data.payments.reduce((s, p) => s + p.amount, 0);
+
+  function dl(filename: string, header: string[], rows: (string | number)[][]) {
+    const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
+    const csv = "\uFEFF" + [header, ...rows].map((r) => r.map(esc).join(";")).join("\r\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+    actions.showToast("Export téléchargé");
+  }
+  function exportDue() {
+    const today = new Date().toISOString().slice(0, 10);
+    dl(`clipwar_a-verser_${today}.csv`, ["Clipper", "Méthode", "Détail paiement", "Vues 7j", "Vues totales", "Montant dû (€)"],
+      due.map((c) => [c.name, c.payout_method || "", c.payout_detail || "", c.vues_7, c.vues_total, c.gain.toFixed(2).replace(".", ",")]));
+  }
+  function exportHistory() {
+    dl(`clipwar_versements.csv`, ["Date", "Clipper", "Vues payées", "Montant (€)", "Statut"],
+      data.payments.map((p) => [p.created_at.slice(0, 10), p.clipper_name || "Clipper", p.net_views, p.amount.toFixed(2).replace(".", ","), p.status]));
+  }
+
   return (
     <>
       <div className="eyebrow" style={{ marginTop: 14 }}>Versements</div>
@@ -509,6 +570,10 @@ function Payments({ data, actions }: { data: AdminData; actions: AdmActions }) {
         <div style={{ fontSize: 12, color: "var(--mut)", fontWeight: 600 }}>Dû en attente (cumulatif réel)</div>
         <div className="display" style={{ fontSize: 34, fontWeight: 700, margin: "4px 0" }}>{euro(data.dash.a_verser)}</div>
         <div style={{ fontSize: 12, color: "var(--mut)" }}>{due.length} clipper{due.length > 1 ? "s" : ""} avec un solde · {euro(totalPaid)} déjà versés au total</div>
+      </div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
+        <button className="btn btn-gh" style={{ padding: 10, fontSize: 12.5 }} onClick={exportDue} disabled={!due.length}>⬇︎ Export « à verser »</button>
+        <button className="btn btn-gh" style={{ padding: 10, fontSize: 12.5 }} onClick={exportHistory} disabled={!data.payments.length}>⬇︎ Export versements</button>
       </div>
       <div className="sec-h"><h2>À verser</h2></div>
       <div className="card">
@@ -708,7 +773,7 @@ export default function Admin({ tab, actions, catalog, arena, isOwner, userName,
     const c = clipperId ? data.clippers.find((x) => x.id === clipperId) : null;
     screen = c ? <ClipperDetail c={c} data={data} actions={actions} /> : <Clippers data={data} actions={actions} />;
   } else if (tab === "campaigns") screen = <Campaigns catalog={catalog} actions={actions} />;
-  else if (tab === "clips") screen = <ClipsFeed data={data} catalog={catalog} />;
+  else if (tab === "clips") screen = <ClipsFeed data={data} catalog={catalog} actions={actions} />;
   else if (tab === "challenges") screen = <Challenges arena={arena} actions={actions} />;
   else if (tab === "assets") screen = <AssetsScreen catalog={catalog} actions={actions} />;
   else if (tab === "fraud") screen = <Fraud data={data} />;
