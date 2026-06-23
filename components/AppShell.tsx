@@ -285,9 +285,9 @@ export default function AppShell() {
         { id: "clips", label: "Clips", icon: "clip" },
         { id: "campaigns", label: "Campagnes", icon: "folder" },
         { id: "challenges", label: "Challenges", icon: "trophy" },
-        { id: "assets", label: "Assets", icon: "grid" },
         { id: "fraud", label: "Anti-triche", icon: "alert" },
         { id: "pay", label: "Paiements", icon: "wallet" },
+        { id: "settings", label: "Réglages", icon: "settings" },
         ...(profile?.role === "owner" ? [{ id: "team", label: "Équipe", icon: "user" }] : []),
       ]
     : [

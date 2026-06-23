@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { Hud, Avatar } from "./ui";
 import { getSupabase } from "@/lib/supabase/client";
 import { celebrate } from "@/lib/confetti";
-import { REF_BONUS } from "@/lib/referral";
+import { useSettings, setSetting } from "@/lib/settings";
 import { fmt, euro, platLabel, agoLabel } from "@/lib/data";
 import { Catalog, AssetReal, campNameOf, campGradOf, initialsOf } from "@/lib/catalog";
 import { Arena, ArenaChallenge, endsLabel, rewardText, metricLabel, kindLabel, fetchChallengeBoard, awardChallenge } from "@/lib/arena";
@@ -491,6 +491,71 @@ function CatalogAssetRow({ a, camps }: { a: AssetReal; camps: Catalog["campaigns
     </div>
   );
 }
+/* ───────────── RÉGLAGES (admin) ───────────── */
+function SettingsScreen({ actions }: { actions: AdmActions }) {
+  const s = useSettings();
+  const [drive, setDrive] = useState("");
+  const [bonus, setBonus] = useState("");
+  const [milestone, setMilestone] = useState("");
+  const [emailOn, setEmailOn] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    if (s.raw && !ready) {
+      setDrive(s.driveUrl); setBonus(String(s.refBonus)); setMilestone(String(s.refMilestone)); setEmailOn(s.emailEnabled); setReady(true);
+    }
+  }, [s.raw, ready]);
+
+  async function save() {
+    setBusy(true);
+    await Promise.all([
+      setSetting("drive_url", drive.trim()),
+      setSetting("ref_bonus", String(parseInt(bonus, 10) || 0)),
+      setSetting("ref_milestone", String(parseInt(milestone.replace(/\s/g, ""), 10) || 10000)),
+      setSetting("email_enabled", emailOn ? "1" : "0"),
+    ]);
+    await s.reload();
+    setBusy(false);
+    actions.showToast("Réglages enregistrés ✨");
+  }
+
+  return (
+    <>
+      <div className="eyebrow" style={{ marginTop: 14 }}>Configuration</div>
+      <h2 className="display" style={{ fontSize: 22, margin: "4px 0 10px" }}>Réglages</h2>
+
+      <div className="card">
+        <div className="field"><label>Lien du Google Drive (contenus)</label>
+          <input value={drive} onChange={(e) => setDrive(e.target.value)} placeholder="https://drive.google.com/drive/folders/…" />
+          <div style={{ fontSize: 11.5, color: "var(--mut)", marginTop: 4 }}>Le dossier que les clippers ouvrent depuis « Accéder au Drive ». Pense à le partager en lecture publique.</div>
+        </div>
+      </div>
+
+      <div className="sec-h"><h2>Parrainage</h2></div>
+      <div className="card">
+        <div className="field"><label>Bonus par filleul validé (€)</label>
+          <input value={bonus} onChange={(e) => setBonus(e.target.value)} inputMode="numeric" placeholder="5" /></div>
+        <div className="field"><label>Palier de validation (vues du filleul)</label>
+          <input value={milestone} onChange={(e) => setMilestone(e.target.value)} inputMode="numeric" placeholder="10000" /></div>
+      </div>
+
+      <div className="sec-h"><h2>Emails</h2></div>
+      <div className="card">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div><div className="t">Envoyer les emails automatiques</div><div className="s">Paiement, challenge gagné, clip en pause…</div></div>
+          <button onClick={() => setEmailOn((v) => !v)} style={{ position: "relative", width: 44, height: 24, borderRadius: 99, border: "none", cursor: "pointer", background: emailOn ? "var(--mint)" : "var(--surf2)" }}>
+            <span style={{ position: "absolute", top: 2, left: emailOn ? 22 : 2, width: 20, height: 20, borderRadius: "50%", background: "#0a0610", transition: "left .15s" }} />
+          </button>
+        </div>
+        <div style={{ fontSize: 11.5, color: "var(--mut)", marginTop: 8 }}>Nécessite une clé <b>RESEND_API_KEY</b> dans Vercel pour fonctionner. Sans clé, seules les notifications dans l&apos;app sont envoyées.</div>
+      </div>
+
+      <button className="btn btn-pri" style={{ marginTop: 16, padding: 14 }} onClick={save} disabled={busy || !ready}>{busy ? "Enregistrement…" : "Enregistrer les réglages"}</button>
+    </>
+  );
+}
+
 function AssetsScreen({ catalog, actions }: { catalog: Catalog; actions: AdmActions }) {
   return (
     <>
@@ -612,6 +677,7 @@ function Payments({ data, actions }: { data: AdminData; actions: AdmActions }) {
 
 /* ───────────── BONUS DE PARRAINAGE (admin) ───────────── */
 function ReferralPayouts() {
+  const { refBonus } = useSettings();
   const [rows, setRows] = useState<{ parrain_id: string; parrain: string; filleuls: number; valides: number }[]>([]);
   const [loaded, setLoaded] = useState(false);
   useEffect(() => {
@@ -633,7 +699,7 @@ function ReferralPayouts() {
               <div className="t">{r.parrain}</div>
               <div className="s">{r.filleuls} filleul{r.filleuls > 1 ? "s" : ""} · {r.valides} validé{r.valides > 1 ? "s" : ""}</div>
             </div>
-            <div className="end"><div className="vue mono" style={{ color: r.valides ? "var(--mint)" : "var(--mut2)" }}>{euro(r.valides * REF_BONUS)}</div><div className="delta flat">bonus</div></div>
+            <div className="end"><div className="vue mono" style={{ color: r.valides ? "var(--mint)" : "var(--mut2)" }}>{euro(r.valides * refBonus)}</div><div className="delta flat">bonus</div></div>
           </div>
         ))}
         {withBonus.length === 0 && <div style={{ fontSize: 11.5, color: "var(--mut2)", padding: "4px 2px 0" }}>Aucun bonus débloqué pour l&apos;instant (palier non atteint).</div>}
@@ -810,7 +876,7 @@ export default function Admin({ tab, actions, catalog, arena, isOwner, userName,
   } else if (tab === "campaigns") screen = <Campaigns catalog={catalog} actions={actions} />;
   else if (tab === "clips") screen = <ClipsFeed data={data} catalog={catalog} actions={actions} />;
   else if (tab === "challenges") screen = <Challenges arena={arena} actions={actions} />;
-  else if (tab === "assets") screen = <AssetsScreen catalog={catalog} actions={actions} />;
+  else if (tab === "assets" || tab === "settings") screen = <SettingsScreen actions={actions} />;
   else if (tab === "fraud") screen = <Fraud data={data} />;
   else if (tab === "pay") screen = <Payments data={data} actions={actions} />;
   else screen = <Dash data={data} catalog={catalog} isOwner={isOwner} actions={actions} />;

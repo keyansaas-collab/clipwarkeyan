@@ -9,8 +9,8 @@ import {
 } from "@/lib/data";
 import { Catalog, AssetReal, initialsOf } from "@/lib/catalog";
 import { Arena, BoardRow, endsLabel, rewardText, kindLabel } from "@/lib/arena";
-import { getMyCode, getMyReferrals, refLink, Filleul, REF_MILESTONE, REF_BONUS } from "@/lib/referral";
-import { DRIVE_URL } from "@/lib/config";
+import { getMyCode, getMyReferrals, refLink, Filleul } from "@/lib/referral";
+import { useSettings } from "@/lib/settings";
 
 export type ClipActions = {
   go: (tab: string) => void;
@@ -141,6 +141,7 @@ function Home({ clips, name, place, arena, actions }: { clips: MyClip[]; name: s
 
 /* ====================== CAMPAGNES (catalogue réel) ====================== */
 function Campaigns({ camp, catalog, actions }: { camp: string | null; catalog: Catalog; actions: ClipActions }) {
+  const { driveUrl } = useSettings();
   if (camp) {
     const c = catalog.campaigns.find((x) => x.id === camp);
     if (!c) return <div className="empty" style={{ marginTop: 20 }}>Campagne introuvable.</div>;
@@ -156,7 +157,7 @@ function Campaigns({ camp, catalog, actions }: { camp: string | null; catalog: C
         <div className="card" style={{ marginTop: 14, background: "linear-gradient(150deg,rgba(45,226,230,.12),rgba(139,108,255,.06)),var(--surf)", borderColor: "var(--line2)" }}>
           <div style={{ fontWeight: 700, fontSize: 15 }}>📁 Tous les contenus sont sur le Drive</div>
           <div style={{ fontSize: 12.5, color: "var(--mut)", marginTop: 4 }}>Pioche ce que tu veux, mélange les intros et les séquences, monte ta vidéo, puis soumets ton clip ici.</div>
-          <a className="btn btn-pri" style={{ marginTop: 12, padding: 13, display: "block", textAlign: "center", textDecoration: "none" }} href={DRIVE_URL} target="_blank" rel="noopener noreferrer">Ouvrir le Drive ↗</a>
+          <a className="btn btn-pri" style={{ marginTop: 12, padding: 13, display: "block", textAlign: "center", textDecoration: "none" }} href={driveUrl} target="_blank" rel="noopener noreferrer">Ouvrir le Drive ↗</a>
           <button className="btn btn-gh" style={{ marginTop: 9, padding: 12 }} onClick={() => actions.openSubmit()}>J&apos;ai mon clip — le soumettre</button>
         </div>
       </>
@@ -168,7 +169,7 @@ function Campaigns({ camp, catalog, actions }: { camp: string | null; catalog: C
       <h2 className="display" style={{ fontSize: 22, margin: "4px 0 4px" }}>Choisis ton terrain</h2>
       <p style={{ color: "var(--mut)", fontSize: 13, marginBottom: 6 }}>Chaque campagne = son tarif aux vues. Les contenus sont sur le Drive commun.</p>
 
-      <a className="card" style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 13, textDecoration: "none", background: "linear-gradient(150deg,rgba(45,226,230,.14),rgba(139,108,255,.06)),var(--surf)", borderColor: "var(--line2)" }} href={DRIVE_URL} target="_blank" rel="noopener noreferrer">
+      <a className="card" style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 13, textDecoration: "none", background: "linear-gradient(150deg,rgba(45,226,230,.14),rgba(139,108,255,.06)),var(--surf)", borderColor: "var(--line2)" }} href={driveUrl} target="_blank" rel="noopener noreferrer">
         <div className="thumb" style={{ width: 48, height: 48, background: "var(--grad)", fontSize: 22 }}>📁</div>
         <div style={{ flex: 1 }}><div style={{ fontWeight: 700, fontSize: 15 }}>Accéder au Drive</div><div style={{ fontSize: 12, color: "var(--mut)", marginTop: 2 }}>Tous les contenus à clipper, au même endroit ↗</div></div>
       </a>
@@ -436,6 +437,7 @@ function Profil({ userId, email, vuesTotal, reloadProfile, actions }: { userId: 
 
 /* ───────────── PARRAINAGE ───────────── */
 function ReferralCard({ actions }: { actions: ClipActions }) {
+  const { refBonus: REF_BONUS, refMilestone: REF_MILESTONE } = useSettings();
   const [code, setCode] = useState<string | null>(null);
   const [filleuls, setFilleuls] = useState<Filleul[]>([]);
   const [loading, setLoading] = useState(true);
