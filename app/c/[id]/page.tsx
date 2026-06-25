@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, use } from "react";
 import { Icon } from "@/components/ui";
 import { fmt } from "@/lib/data";
 import { getSupabase } from "@/lib/supabase/client";
@@ -10,19 +10,20 @@ type Camp = {
   accent: string | null; clips: number; vues: number; clippers: number;
 };
 
-export default function PublicCampaign({ params }: { params: { id: string } }) {
+export default function PublicCampaign({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
   const [camp, setCamp] = useState<Camp | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
   useEffect(() => {
-    getSupabase().rpc("public_campaign", { p_id: params.id }).then(({ data }) => {
+    getSupabase().rpc("public_campaign", { p_id: id }).then(({ data }) => {
       const c = Array.isArray(data) ? data[0] : data;
       if (c) setCamp({ id: c.id, name: c.name, description: c.description, rate: Number(c.rate) || 0, accent: c.accent, clips: Number(c.clips) || 0, vues: Number(c.vues) || 0, clippers: Number(c.clippers) || 0 });
       else setNotFound(true);
       setLoading(false);
     });
-  }, [params.id]);
+  }, [id]);
 
   if (loading) return <div className="lp"><div className="lp-hero" style={{ minHeight: "60vh" }}><div className="lp-eyebrow"><span className="dot" /> Chargement…</div></div></div>;
   if (notFound || !camp) return (
