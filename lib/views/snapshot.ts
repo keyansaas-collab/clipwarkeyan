@@ -55,14 +55,24 @@ async function processOne(db: DB, clip: any, res: SnapshotResult) {
   await db.from("view_snapshots").insert({ clip_id: clip.id, views });
   res.inserted++;
 
-  if (last && views < last.views) {
-    await db.from("clips").update({ status: "hold" }).eq("id", clip.id);
-    await db.from("fraud_flags").insert({
-      clip_id: clip.id, kind: "negative_progress",
-      detail: `Vues en baisse : ${last.views} → ${views}`,
-    });
-    res.flagged++;
-  } else if (clip.status === "hold" && last && views >= last.views) {
-    await db.from("clips").update({ status: "track" }).eq("id", clip.id);
+  // Une baisse de vues n'est suspecte que si elle est SIGNIFICATIVE.
+  // Les plateformes (surtout YouTube) recomptent et retirent quelques vues
+  // invalides en permanence : une petite baisse est normale, pas de la triche.
+  // On ne gèle que si la chute dépasse À LA FOIS un seuil absolu ET un %.
+  // (modifiables ici)
+  const DROP_ABS = 25;    // vues
+  const DROP_PCT = 0.03;  // 3 % du compteur précédent
+  if (last) {
+    const drop = last.views - views;
+    if (drop > DROP_ABS && drop > last.views * DROP_PCT) {
+      await db.from("clips").update({ status: "hold" }).eq("id", clip.id);
+      await db.from("fraud_flags").insert({
+        clip_id: clip.id, kind: "negative_progress",
+        detail: `Chute de vues : ${last.views} → ${views} (−${drop})`,
+      });
+      res.flagged++;
+    }
   }
+  // La remise en suivi d'un clip gelé se fait à la main (admin → Réactiver),
+  // pour ne jamais défaire une mise en pause décidée par le staff.
 }
