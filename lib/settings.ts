@@ -22,6 +22,7 @@ export type Settings = {
   driveUrl: string;
   refBonus: number;
   refMilestone: number;
+  viewCap: number;
   emailEnabled: boolean;
   raw: Record<string, string> | null;
   reload: () => Promise<void>;
@@ -39,6 +40,7 @@ export function useSettings(): Settings {
     driveUrl: get("drive_url", DRIVE_URL),
     refBonus: Number(get("ref_bonus", String(REF_BONUS))) || REF_BONUS,
     refMilestone: Number(get("ref_milestone", String(REF_MILESTONE))) || REF_MILESTONE,
+    viewCap: Number(get("view_cap", "100000")) || 100000,
     emailEnabled: get("email_enabled", "1") === "1",
     raw: map,
     reload: async () => { await load(true); setMap({ ...(_cache || {}) }); },

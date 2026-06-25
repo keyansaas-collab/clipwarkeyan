@@ -26,7 +26,11 @@ export type Alert = { ic: string; t: string; s: string };
 
 export const fmt = (n: number) =>
   n.toLocaleString("fr-FR").replace(/[\u202f\u00a0]/g, " ");
-export const euro = (n: number) => fmt(Math.round(n)) + " €";
+export const euro = (n: number) => {
+  const v = Math.round((Number(n) || 0) * 100) / 100;
+  const [i, d] = v.toFixed(2).split(".");
+  return fmt(Number(i)) + "," + d + " €";
+};
 
 export const campaigns: Campaign[] = [
   { id: "life", name: "Lifestyle", grad: "linear-gradient(135deg,#2DE2E6,#8B6CFF)", tag: "cy", rate: 1.0, assets: 14, desc: "Quotidien, voyages, behind-the-scenes" },

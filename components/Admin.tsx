@@ -199,7 +199,12 @@ function RefreshViewsButton({ actions }: { actions: AdmActions }) {
       const res = await fetch("/api/admin/refresh-views", { method: "POST", headers: { authorization: `Bearer ${token}` } });
       const j = await res.json();
       if (!res.ok) { actions.showToast(j.error === "forbidden" ? "Réservé au staff" : "Échec du relevé"); }
-      else actions.showToast(`Relevé : ${j.inserted} maj · ${j.flagged} gelés · ${j.skipped} ignorés`);
+      else {
+        const bp = j.byPlatform || {};
+        const seg = ["tiktok", "instagram", "youtube"].filter((p) => bp[p] && (bp[p].ok || bp[p].fail))
+          .map((p) => `${p === "tiktok" ? "TT" : p === "instagram" ? "IG" : "YT"} ${bp[p].ok}/${bp[p].ok + bp[p].fail}`).join(" · ");
+        actions.showToast(`Relevé : ${j.inserted} maj${seg ? " · " + seg : ""}`);
+      }
     } catch { actions.showToast("Erreur réseau"); }
     setBusy(false);
   }
@@ -497,13 +502,14 @@ function SettingsScreen({ actions }: { actions: AdmActions }) {
   const [drive, setDrive] = useState("");
   const [bonus, setBonus] = useState("");
   const [milestone, setMilestone] = useState("");
+  const [cap, setCap] = useState("");
   const [emailOn, setEmailOn] = useState(true);
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     if (s.raw && !ready) {
-      setDrive(s.driveUrl); setBonus(String(s.refBonus)); setMilestone(String(s.refMilestone)); setEmailOn(s.emailEnabled); setReady(true);
+      setDrive(s.driveUrl); setBonus(String(s.refBonus)); setMilestone(String(s.refMilestone)); setCap(String(s.viewCap)); setEmailOn(s.emailEnabled); setReady(true);
     }
   }, [s.raw, ready]);
 
@@ -513,6 +519,7 @@ function SettingsScreen({ actions }: { actions: AdmActions }) {
       setSetting("drive_url", drive.trim()),
       setSetting("ref_bonus", String(parseInt(bonus, 10) || 0)),
       setSetting("ref_milestone", String(parseInt(milestone.replace(/\s/g, ""), 10) || 10000)),
+      setSetting("view_cap", String(parseInt(cap.replace(/\s/g, ""), 10) || 100000)),
       setSetting("email_enabled", emailOn ? "1" : "0"),
     ]);
     await s.reload();
@@ -538,6 +545,14 @@ function SettingsScreen({ actions }: { actions: AdmActions }) {
           <input value={bonus} onChange={(e) => setBonus(e.target.value)} inputMode="numeric" placeholder="5" /></div>
         <div className="field"><label>Palier de validation (vues du filleul)</label>
           <input value={milestone} onChange={(e) => setMilestone(e.target.value)} inputMode="numeric" placeholder="10000" /></div>
+      </div>
+
+      <div className="sec-h"><h2>Monétisation</h2></div>
+      <div className="card">
+        <div className="field"><label>Plafond de vues payées par vidéo</label>
+          <input value={cap} onChange={(e) => setCap(e.target.value)} inputMode="numeric" placeholder="100000" />
+          <div style={{ fontSize: 11.5, color: "var(--mut)", marginTop: 4 }}>Au-delà de ce nombre de vues, une vidéo ne génère plus de gain. Les vues réelles restent affichées.</div>
+        </div>
       </div>
 
       <div className="sec-h"><h2>Emails</h2></div>
