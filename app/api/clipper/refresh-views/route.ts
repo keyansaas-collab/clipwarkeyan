@@ -4,9 +4,11 @@ import { runSnapshots } from "@/lib/views/snapshot";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 300;
+export const maxDuration = 120;
 
-// Bouton « Rafraîchir les vues » côté admin. Staff uniquement.
+const COOLDOWN_MIN = 15; // un clipper peut rafraîchir au plus toutes les 15 min
+
+// Le clipper rafraîchit SES propres vues. Cooldown anti-abus.
 export async function POST(req: NextRequest) {
   const token = (req.headers.get("authorization") || "").replace("Bearer ", "");
   if (!token) return Response.json({ error: "no token" }, { status: 401 });
@@ -14,17 +16,18 @@ export async function POST(req: NextRequest) {
   const db = supabaseAdmin();
   const { data: userData, error: uErr } = await db.auth.getUser(token);
   if (uErr || !userData?.user) return Response.json({ error: "invalid token" }, { status: 401 });
+  const uid = userData.user.id;
 
-  const { data: prof } = await db.from("profiles").select("role").eq("id", userData.user.id).maybeSingle();
-  if (!prof || (prof.role !== "owner" && prof.role !== "admin")) {
-    return Response.json({ error: "forbidden" }, { status: 403 });
+  const { data: prof } = await db.from("profiles").select("last_views_refresh").eq("id", uid).maybeSingle();
+  const last = prof?.last_views_refresh ? new Date(prof.last_views_refresh).getTime() : 0;
+  const waitMs = COOLDOWN_MIN * 60 * 1000 - (Date.now() - last);
+  if (last && waitMs > 0) {
+    return Response.json({ error: "cooldown", retryInSec: Math.ceil(waitMs / 1000) }, { status: 429 });
   }
 
-  let clipperId: string | undefined;
-  try { const body = await req.json(); clipperId = body?.clipperId || undefined; } catch {}
-
   try {
-    const result = await runSnapshots(db, clipperId);
+    const result = await runSnapshots(db, uid);
+    await db.from("profiles").update({ last_views_refresh: new Date().toISOString() }).eq("id", uid);
     return Response.json({ ok: true, ...result });
   } catch (e: any) {
     return Response.json({ error: e?.message || "refresh failed" }, { status: 500 });

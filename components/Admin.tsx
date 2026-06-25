@@ -78,6 +78,11 @@ function ClipRowLink({ c, showClipper }: { c: AdmClip; showClipper?: boolean }) 
         <div className="s">
           {showClipper ? c.clipper_name + " · " : ""}{platLabel[c.platform] || c.platform} · {ago} <span className={"pill " + pill[0]} style={{ marginLeft: 4 }}>{pill[1]}</span>
         </div>
+        {c.status === "hold" && (
+          <div style={{ fontSize: 11.5, color: "var(--coral)", marginTop: 3 }}>
+            ❄️ {c.hold_reason || "Gelé manuellement par le staff"}
+          </div>
+        )}
       </div>
       <div className="end">
         <div className="vue">{fmt(c.vues)}</div>
@@ -503,13 +508,14 @@ function SettingsScreen({ actions }: { actions: AdmActions }) {
   const [bonus, setBonus] = useState("");
   const [milestone, setMilestone] = useState("");
   const [cap, setCap] = useState("");
+  const [win, setWin] = useState("");
   const [emailOn, setEmailOn] = useState(true);
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     if (s.raw && !ready) {
-      setDrive(s.driveUrl); setBonus(String(s.refBonus)); setMilestone(String(s.refMilestone)); setCap(String(s.viewCap)); setEmailOn(s.emailEnabled); setReady(true);
+      setDrive(s.driveUrl); setBonus(String(s.refBonus)); setMilestone(String(s.refMilestone)); setCap(String(s.viewCap)); setWin(String(s.payWindowDays)); setEmailOn(s.emailEnabled); setReady(true);
     }
   }, [s.raw, ready]);
 
@@ -520,6 +526,7 @@ function SettingsScreen({ actions }: { actions: AdmActions }) {
       setSetting("ref_bonus", String(parseInt(bonus, 10) || 0)),
       setSetting("ref_milestone", String(parseInt(milestone.replace(/\s/g, ""), 10) || 10000)),
       setSetting("view_cap", String(parseInt(cap.replace(/\s/g, ""), 10) || 100000)),
+      setSetting("pay_window_days", String(Math.max(0, parseInt(win, 10) || 0))),
       setSetting("email_enabled", emailOn ? "1" : "0"),
     ]);
     await s.reload();
@@ -552,6 +559,10 @@ function SettingsScreen({ actions }: { actions: AdmActions }) {
         <div className="field"><label>Plafond de vues payées par vidéo</label>
           <input value={cap} onChange={(e) => setCap(e.target.value)} inputMode="numeric" placeholder="100000" />
           <div style={{ fontSize: 11.5, color: "var(--mut)", marginTop: 4 }}>Au-delà de ce nombre de vues, une vidéo ne génère plus de gain. Les vues réelles restent affichées.</div>
+        </div>
+        <div className="field"><label>Fenêtre de paiement (jours après le post)</label>
+          <input value={win} onChange={(e) => setWin(e.target.value)} inputMode="numeric" placeholder="7" />
+          <div style={{ fontSize: 11.5, color: "var(--mut)", marginTop: 4 }}>Une vidéo rapporte pendant ce nombre de jours après sa publication, puis son compteur payable se fige. Mets <b>0</b> pour aucune limite. Les vidéos postées pendant un challenge sont exemptées.</div>
         </div>
       </div>
 
@@ -591,23 +602,50 @@ function AssetsScreen({ catalog, actions }: { catalog: Catalog; actions: AdmActi
 }
 
 /* ───────────── ANTI-TRICHE ───────────── */
-function Fraud({ data }: { data: AdminData }) {
+function Fraud({ data, actions }: { data: AdminData; actions: AdmActions }) {
+  const [busy, setBusy] = useState<number | null>(null);
+  const [hidden, setHidden] = useState<Set<number>>(new Set());
   const rules = [
     ["Hold avant versement", "Délai de gel + re-contrôle existence du clip"],
     ["Progression négative", "Chute de vues = gel automatique"],
     ["Anti-doublon", "Même lien / ré-upload sur une même plateforme"],
     ["Clip vivant", "Vérifie que le clip existe encore au paiement"],
   ];
+  async function resolve(id: number, reactivate: boolean) {
+    setBusy(id);
+    const { error } = await getSupabase().rpc("resolve_fraud", { p_id: id, p_reactivate: reactivate });
+    setBusy(null);
+    if (error) {
+      const missing = /resolve_fraud|function|does not exist|schema cache/i.test(error.message || "");
+      actions.showToast(missing ? "Relance le SQL (resolve_fraud manquante)" : "Action impossible");
+      return;
+    }
+    setHidden((p) => new Set(p).add(id));
+    actions.showToast(reactivate ? "Clip réactivé ✓" : "Alerte classée");
+    if (reactivate) data.reload();
+  }
+  const list = data.fraud.filter((a) => !hidden.has(a.id));
   return (
     <>
       <div className="eyebrow" style={{ marginTop: 14 }}>Bouclier</div>
       <h2 className="display" style={{ fontSize: 22, margin: "4px 0 4px" }}>Anti-triche</h2>
-      <p style={{ color: "var(--mut)", fontSize: 12.5, marginBottom: 12 }}>On ne compte que les vues encore vivantes. Tout signal gèle le paiement avant vérification.</p>
+      <p style={{ color: "var(--mut)", fontSize: 12.5, marginBottom: 12 }}>Touche une alerte pour ouvrir la vidéo et vérifier, puis tranche : fausse alerte (réactiver) ou anomalie confirmée (garder gelé).</p>
       {data.loading ? <div className="card"><div className="empty">Chargement…</div></div>
-        : data.fraud.length ? data.fraud.map((a) => (
-          <div className="alert" key={a.id}><div className="ic">{fraudIcon[a.kind] || "!"}</div><div>
-            <div className="at">{fraudLabel[a.kind] || "Alerte"}{a.clipper_name ? " — " + a.clipper_name : ""}{a.platform ? " · " + (platLabel[a.platform] || a.platform) : ""}</div>
-            <div className="as">{a.detail || "Signal détecté sur un clip."}</div></div></div>
+        : list.length ? list.map((a) => (
+          <div className="card" key={a.id} style={{ borderColor: "rgba(255,106,69,.28)", marginBottom: 10, padding: 0, overflow: "hidden" }}>
+            <a href={a.url || "#"} target="_blank" rel="noopener noreferrer" onClick={(e) => { if (!a.url) { e.preventDefault(); actions.showToast("Relance le SQL (URL du clip manquante)"); } }} style={{ display: "flex", gap: 12, padding: "13px 14px", textDecoration: "none", alignItems: "flex-start" }}>
+              <div className="ic" style={{ background: "rgba(255,106,69,.15)", color: "var(--coral)", width: 38, height: 38, borderRadius: 10, display: "grid", placeItems: "center", flexShrink: 0, fontWeight: 700 }}>{fraudIcon[a.kind] || "!"}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="at" style={{ fontWeight: 600 }}>{fraudLabel[a.kind] || "Alerte"}{a.clipper_name ? " — " + a.clipper_name : ""}{a.platform ? " · " + (platLabel[a.platform] || a.platform) : ""} {a.url && <span className="ext">↗</span>}</div>
+                <div className="as" style={{ fontSize: 12.5, color: "var(--mut)", marginTop: 2 }}>{a.detail || "Signal détecté sur un clip."}</div>
+                <div style={{ fontSize: 11, color: "var(--mut2)", marginTop: 3 }}>{a.clip_status === "hold" ? "Clip actuellement gelé" : a.clip_status === "track" ? "Clip en suivi" : ""}</div>
+              </div>
+            </a>
+            <div style={{ display: "flex", gap: 8, padding: "0 14px 13px" }}>
+              <button className="btn btn-gh" style={{ flex: 1, padding: 9, fontSize: 12.5 }} disabled={busy === a.id} onClick={() => resolve(a.id, true)}>Fausse alerte · réactiver</button>
+              <button className="btn btn-gh" style={{ flex: 1, padding: 9, fontSize: 12.5, color: "var(--coral)" }} disabled={busy === a.id} onClick={() => resolve(a.id, false)}>Anomalie · garder gelé</button>
+            </div>
+          </div>
         )) : <div className="card"><div className="empty">Aucune alerte. Tout est sain pour l&apos;instant.</div></div>}
       <div className="sec-h"><h2>Règles actives</h2></div>
       <div className="card">
@@ -656,6 +694,7 @@ function Payments({ data, actions }: { data: AdminData; actions: AdmActions }) {
         <button className="btn btn-gh" style={{ padding: 10, fontSize: 12.5 }} onClick={exportDue} disabled={!due.length}>⬇︎ Export « à verser »</button>
         <button className="btn btn-gh" style={{ padding: 10, fontSize: 12.5 }} onClick={exportHistory} disabled={!data.payments.length}>⬇︎ Export versements</button>
       </div>
+      <PayoutRequests actions={actions} />
       <div className="sec-h"><h2>À verser</h2></div>
       <div className="card">
         {data.loading ? <div className="empty">Chargement…</div>
@@ -686,6 +725,36 @@ function Payments({ data, actions }: { data: AdminData; actions: AdmActions }) {
       </div>
 
       <ReferralPayouts />
+    </>
+  );
+}
+
+/* ───────────── DEMANDES DE PAIEMENT (admin) ───────────── */
+function PayoutRequests({ actions }: { actions: AdmActions }) {
+  const [rows, setRows] = useState<{ id: number; clipper_id: string; clipper: string; amount: number; views: number; created_at: string }[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    getSupabase().rpc("admin_payout_requests").then(({ data }) => {
+      setRows((data || []).map((r: any) => ({ id: r.id, clipper_id: r.clipper_id, clipper: r.clipper, amount: Number(r.amount) || 0, views: Number(r.views) || 0, created_at: r.created_at })));
+      setLoaded(true);
+    });
+  }, []);
+  if (!loaded || rows.length === 0) return null;
+  return (
+    <>
+      <div className="sec-h"><h2>Demandes de paiement 💸</h2><span className="more">{rows.length}</span></div>
+      <div className="card" style={{ borderColor: "rgba(53,230,161,.3)" }}>
+        {rows.map((r) => (
+          <div className="row" key={r.id}>
+            <div className="thumb" style={{ background: "var(--surf2)", color: "var(--mint)" }}>{initialsOf(r.clipper)}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="t">{r.clipper}</div>
+              <div className="s">demande {euro(r.amount)} · {agoLabel(Math.max(0, Math.floor((Date.now() - new Date(r.created_at).getTime()) / 864e5)))}</div>
+            </div>
+            <button className="btn btn-pri" style={{ width: "auto", padding: "8px 12px" }} onClick={() => actions.openPayVerify(r.clipper_id)}>Vérifier</button>
+          </div>
+        ))}
+      </div>
     </>
   );
 }
@@ -740,6 +809,7 @@ function PayClipRow({ k, excluded, reason }: { k: AdmClip; excluded?: boolean; r
 }
 function PayVerify({ c, data, actions }: { c: AdmClipper; data: AdminData; actions: AdmActions }) {
   const [busy, setBusy] = useState(false);
+  const [reverifying, setReverifying] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const clips = data.clips.filter((k) => k.clipper_id === c.id);
   const sains = clips.filter((k) => k.status === "track" && k.due > 0);
@@ -747,6 +817,21 @@ function PayVerify({ c, data, actions }: { c: AdmClipper; data: AdminData; actio
   const total = sains.reduce((s, k) => s + k.gain, 0);
   const exclusTotal = exclus.reduce((s, k) => s + k.gain, 0);
   const geles = exclus.filter((k) => k.status === "hold" || k.status === "rejected").length;
+
+  async function reverify() {
+    setReverifying(true);
+    try {
+      const { data: s } = await getSupabase().auth.getSession();
+      const res = await fetch("/api/admin/refresh-views", {
+        method: "POST",
+        headers: { authorization: `Bearer ${s.session?.access_token}`, "content-type": "application/json" },
+        body: JSON.stringify({ clipperId: c.id }),
+      });
+      if (!res.ok) { actions.showToast("Re-vérif impossible"); }
+      else { await data.reload(); actions.showToast("Vues re-vérifiées à l'instant ✓"); }
+    } catch { actions.showToast("Erreur réseau"); }
+    setReverifying(false);
+  }
 
   async function settle() {
     setBusy(true); setErr(null);
@@ -774,6 +859,8 @@ function PayVerify({ c, data, actions }: { c: AdmClipper; data: AdminData; actio
         <div className="row"><div style={{ color: geles ? "var(--amber)" : "var(--mut2)", fontWeight: 700 }}>{geles ? "!" : "✓"}</div><div style={{ flex: 1 }}><div className="t">{geles} clip{geles > 1 ? "s" : ""} gelé{geles > 1 ? "s" : ""}</div><div className="s">Exclus du versement (progression négative)</div></div></div>
         <div className="row"><div style={{ color: "var(--mint)", fontWeight: 700 }}>✓</div><div style={{ flex: 1 }}><div className="t">On ne paie que le surplus</div><div className="s">Vues déjà réglées lors des versements précédents non recomptées</div></div></div>
         <div style={{ fontSize: 11.5, color: "var(--mut2)", marginTop: 6 }}>Ouvre chaque vidéo (↗) pour la contrôler avant de valider.</div>
+        <button className="btn btn-gh" style={{ marginTop: 10, padding: 11 }} onClick={reverify} disabled={reverifying}>{reverifying ? "Re-vérification…" : "↻ Re-vérifier les vues maintenant"}</button>
+        <div style={{ fontSize: 11, color: "var(--mut2)", marginTop: 6 }}>Relève les vues en direct juste avant de payer — évite qu'un clip gonflé retombe après coup.</div>
       </div>
 
       <div className="sec-h"><h2>Clips comptés</h2></div>
@@ -892,7 +979,7 @@ export default function Admin({ tab, actions, catalog, arena, isOwner, userName,
   else if (tab === "clips") screen = <ClipsFeed data={data} catalog={catalog} actions={actions} />;
   else if (tab === "challenges") screen = <Challenges arena={arena} actions={actions} />;
   else if (tab === "assets" || tab === "settings") screen = <SettingsScreen actions={actions} />;
-  else if (tab === "fraud") screen = <Fraud data={data} />;
+  else if (tab === "fraud") screen = <Fraud data={data} actions={actions} />;
   else if (tab === "pay") screen = <Payments data={data} actions={actions} />;
   else screen = <Dash data={data} catalog={catalog} isOwner={isOwner} actions={actions} />;
 

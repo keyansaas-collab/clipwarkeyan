@@ -60,5 +60,5 @@ export function agoShort(iso: string): string {
 export const notifEmoji: Record<string, string> = {
   clip_validated: "✅", clip_paid: "💰", clip_held: "⏸️", clip_rejected: "🚫",
   challenge_new: "🚀", challenge_won: "🏆", rank_up: "📈",
-  clip_submitted: "🎬", fraud_alert: "⚠️", new_clipper: "👋",
+  clip_submitted: "🎬", fraud_alert: "⚠️", new_clipper: "👋", payout_request: "💸",
 };

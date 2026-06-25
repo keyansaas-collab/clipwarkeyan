@@ -25,6 +25,7 @@ export type AdmClip = {
   asset_id: string | null; asset_title: string | null;
   platform: string; url: string; status: AdmClipStatus; submitted_at: string;
   vues: number; net_7d: number; paid_views: number; due: number; gain: number;
+  hold_reason?: string | null;
 };
 
 export type AdmPayment = {
@@ -39,6 +40,7 @@ export type AdmAsset = { id: string; title: string; campaign_id: string | null; 
 export type AdmFraud = {
   id: number; clip_id: string | null; kind: string; detail: string | null; resolved: boolean;
   created_at: string; clipper_name: string | null; platform: string | null; asset_title: string | null;
+  url?: string | null; clip_status?: string | null;
 };
 
 export type AdminData = {
@@ -102,6 +104,7 @@ export function useAdminData(enabled: boolean): AdminData {
       asset_id: r.asset_id, asset_title: r.asset_title,
       platform: r.platform, url: r.url, status: r.status, submitted_at: r.submitted_at,
       vues: n(r.vues), net_7d: n(r.net_7d), paid_views: n(r.paid_views), due: n(r.due), gain: n(r.gain),
+      hold_reason: r.hold_reason ?? null,
     })));
 
     setViews7((viewsR.data || []).map((r: any) => ({ day: r.day, net: n(r.net) })));
@@ -111,6 +114,7 @@ export function useAdminData(enabled: boolean): AdminData {
     setFraud((fraudR.data || []).map((r: any) => ({
       id: n(r.id), clip_id: r.clip_id, kind: r.kind, detail: r.detail, resolved: !!r.resolved,
       created_at: r.created_at, clipper_name: r.clipper_name, platform: r.platform, asset_title: r.asset_title,
+      url: r.url ?? null, clip_status: r.clip_status ?? null,
     })));
     setPayments((payR.data || []).map((r: any) => ({
       id: r.id, clipper_id: r.clipper_id, clipper_name: r.clipper_name,

@@ -13,12 +13,11 @@ export type SnapshotResult = {
 };
 
 // Relève les vues de tous les clips track/hold, en parallèle par lots.
-// Écrit un snapshot par clip, gèle si les vues baissent, ré-arme si ça repart.
-export async function runSnapshots(db: DB): Promise<SnapshotResult> {
-  const { data: clips, error } = await db
-    .from("clips")
-    .select("id, platform, url, status")
-    .in("status", ["track", "hold"]);
+// Si clipperId est fourni, ne relève que les clips de ce clipper.
+export async function runSnapshots(db: DB, clipperId?: string): Promise<SnapshotResult> {
+  let q = db.from("clips").select("id, platform, url, status").in("status", ["track", "hold"]);
+  if (clipperId) q = q.eq("clipper_id", clipperId);
+  const { data: clips, error } = await q;
   if (error) throw new Error(error.message);
 
   const res: SnapshotResult = {

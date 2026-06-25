@@ -203,6 +203,9 @@ function Mine({ clips, actions }: { clips: MyClip[]; actions: ClipActions }) {
           <option value="all">Tous</option><option value="track">En suivi</option><option value="paid">Payés</option><option value="hold">Gelés</option>
         </select>
       </div>
+      <div style={{ background: "var(--bg2)", border: "1px solid var(--line2)", borderRadius: 12, padding: "11px 13px", fontSize: 12, color: "var(--mut)", lineHeight: 1.5, marginBottom: 10 }}>
+        ℹ️ On compte les <b style={{ color: "var(--text)" }}>vues publiques</b>, mises à jour plusieurs fois par jour. Sur <b style={{ color: "var(--text)" }}>Instagram</b>, ton appli affiche en plus les vues <b style={{ color: "var(--text)" }}>Facebook</b> (les Reels y sont partagés automatiquement) : ces vues-là sont invisibles publiquement, donc ton total Instagram paraît plus élevé. C'est normal — on paie sur les vues vérifiables.
+      </div>
       <div className="card">
         {list.length ? list.map((c) => <MineRow key={c.id} c={c} onClick={() => actions.openClip(c.id)} />)
           : <div className="empty">Aucun clip ici. Soumets-en un avec le bouton +.</div>}
@@ -241,6 +244,12 @@ function ClipDetail({ clip, actions }: { clip: MyClip; actions: ClipActions }) {
         <div className="adm-kpi"><div className="v">{euro(gain)}</div><div className="l">gain estimé</div></div>
       </div>
 
+      {/instagram/i.test(clip.plat) && (
+        <div style={{ background: "var(--bg2)", border: "1px solid var(--line2)", borderRadius: 12, padding: "11px 13px", fontSize: 12, color: "var(--mut)", lineHeight: 1.5, marginTop: 10 }}>
+          ℹ️ Le chiffre que tu vois dans l&apos;appli Instagram inclut les vues <b style={{ color: "var(--text)" }}>Facebook</b> (ton Reel y est partagé automatiquement). Ces vues ne sont pas publiques, donc ClipWar ne compte que les <b style={{ color: "var(--text)" }}>vues Instagram publiques</b> — un peu plus basses, mais vérifiables par tous.
+        </div>
+      )}
+
       <div className="sec-h"><h2>Évolution des vues</h2></div>
       <div className="card">
         {snaps.length >= 2 ? (
@@ -261,9 +270,13 @@ function ClipDetail({ clip, actions }: { clip: MyClip; actions: ClipActions }) {
 
 /* ====================== BILAN ====================== */
 type PayRow = { id: string; amount: number; net_views: number; created_at: string };
-function Bilan({ clips }: { clips: MyClip[] }) {
+function Bilan({ clips, actions }: { clips: MyClip[]; actions: ClipActions }) {
+  const { payWindowDays: win } = useSettings();
   const dueViews = clips.reduce((s, c) => s + (c.due || 0), 0);
   const gain = clips.reduce((s, c) => s + (c.gain || 0), 0);
+  const [pending, setPending] = useState<{ amount: number; created_at: string } | null>(null);
+  const [busyReq, setBusyReq] = useState(false);
+  const [busyRef, setBusyRef] = useState(false);
   useEffect(() => {
     if (gain >= SEUIL) {
       try {
@@ -283,7 +296,32 @@ function Bilan({ clips }: { clips: MyClip[] }) {
         const rows = (data as PayRow[]) || [];
         setPays(rows); setPaid(rows.reduce((s, p) => s + Number(p.amount), 0)); setLoaded(true);
       });
+    getSupabase().from("payout_requests").select("amount, created_at").eq("status", "pending").order("created_at", { ascending: false }).limit(1)
+      .then(({ data }) => { if (data && data[0]) setPending({ amount: Number(data[0].amount), created_at: data[0].created_at }); });
   }, []);
+
+  async function refreshMyViews() {
+    setBusyRef(true);
+    try {
+      const { data: s } = await getSupabase().auth.getSession();
+      const res = await fetch("/api/clipper/refresh-views", { method: "POST", headers: { authorization: `Bearer ${s.session?.access_token}` } });
+      const j = await res.json();
+      if (res.status === 429) actions.showToast(`Patiente encore ${Math.ceil((j.retryInSec || 60) / 60)} min`);
+      else if (!res.ok) actions.showToast("Échec du relevé");
+      else actions.showToast("Vues mises à jour ✨ — recharge dans un instant");
+    } catch { actions.showToast("Erreur réseau"); }
+    setBusyRef(false);
+  }
+  async function askPayout() {
+    setBusyReq(true);
+    const { data, error } = await getSupabase().rpc("request_payout");
+    setBusyReq(false);
+    if (error) { actions.showToast(error.message.includes("Rien") ? "Rien à demander pour l'instant" : "Demande impossible"); return; }
+    const row = Array.isArray(data) ? data[0] : data;
+    setPending({ amount: Number(row?.amount) || gain, created_at: new Date().toISOString() });
+    actions.showToast("Demande envoyée 💸 — le staff va valider");
+  }
+
   return (
     <>
       <div className="eyebrow" style={{ marginTop: 14 }}>Dû cumulatif · depuis ton dernier versement</div>
@@ -294,10 +332,19 @@ function Bilan({ clips }: { clips: MyClip[] }) {
         <div style={{ fontSize: 12.5, color: "var(--mut)" }}>{fmt(dueViews)} vues à payer · {euro(paid)} déjà reçus</div>
         <div className="meter"><i style={{ width: Math.min(100, (gain / SEUIL) * 100) + "%", background: "var(--mint)" }} /></div>
         <div style={{ fontSize: 11.5, color: "var(--mut)", marginTop: 8 }}>Seuil de paiement : {SEUIL} € {gain >= SEUIL ? "— atteint ✓" : `· encore ${euro(SEUIL - gain)}`}</div>
+
+        <button className="btn btn-gh" style={{ marginTop: 12, padding: 11 }} onClick={refreshMyViews} disabled={busyRef}>{busyRef ? "Relevé en cours…" : "↻ Mettre à jour mes vues"}</button>
+        {pending ? (
+          <div style={{ marginTop: 9, textAlign: "center", fontSize: 12.5, color: "var(--mint)", background: "var(--bg2)", border: "1px solid var(--line2)", borderRadius: 10, padding: "11px 12px" }}>
+            ✓ Demande de paiement envoyée ({euro(pending.amount)}) — en attente de validation du staff.
+          </div>
+        ) : (
+          <button className="btn btn-pri" style={{ marginTop: 9, padding: 13 }} onClick={askPayout} disabled={busyReq || gain <= 0}>{busyReq ? "Envoi…" : "Demander mon paiement 💸"}</button>
+        )}
       </div>
       <div className="sec-h"><h2>Comment c&apos;est calculé</h2></div>
       <div className="card" style={{ fontSize: 13, color: "var(--mut)", lineHeight: 1.7 }}>
-        On relève tes vues plusieurs fois par jour. À chaque versement, on te paie les <b style={{ color: "var(--text)" }}>nouvelles vues</b> depuis la dernière fois (vues actuelles − déjà payées) — jamais deux fois les mêmes. Un clip qui pète à J+15 te paie ce jour-là. Un clip dont les vues chutent passe en <span className="pill p-hold">Gelé</span> le temps de vérifier.
+        On relève tes vues plusieurs fois par jour. À chaque versement, on te paie les <b style={{ color: "var(--text)" }}>nouvelles vues</b> depuis la dernière fois (vues actuelles − déjà payées) — jamais deux fois les mêmes. {win > 0 && <>Une vidéo rapporte pendant ses <b style={{ color: "var(--text)" }}>{win} premiers jours</b> après le post (sauf pendant un challenge), puis son compteur payable se fige. </>}Un clip dont les vues chutent passe en <span className="pill p-hold">Gelé</span> le temps de vérifier.
       </div>
       <div className="sec-h"><h2>Historique des paiements</h2></div>
       <div className="card">
@@ -538,7 +585,7 @@ export default function Clipper({ tab, camp, clipDetail, clips, catalog, arena, 
   else if (tab === "clips") {
     const c = clipDetail ? clips.find((x) => x.id === clipDetail) : null;
     screen = c ? <ClipDetail clip={c} actions={actions} /> : <Mine clips={clips} actions={actions} />;
-  } else if (tab === "bilan") screen = <Bilan clips={clips} />;
+  } else if (tab === "bilan") screen = <Bilan clips={clips} actions={actions} />;
   else if (tab === "classement") screen = <Classement arena={arena} userId={userId} />;
   else if (tab === "profil") screen = <Profil userId={userId} email={userEmail || ""} vuesTotal={vuesTotal} reloadProfile={reloadProfile} actions={actions} />;
   else screen = <Home clips={clips} name={userName || "Clipper"} place={place} arena={arena} actions={actions} />;
