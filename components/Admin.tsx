@@ -239,6 +239,9 @@ function Dash({ data, catalog, isOwner, actions }: { data: AdminData; catalog: C
 
   return (
     <>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10, marginBottom: -2 }}>
+        <span className="sticker">NO RISK NO STORY</span>
+      </div>
       {isOwner && (
         <div className="card" style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }} onClick={() => actions.go("team")}>
           <div className="thumb" style={{ width: 38, height: 38, background: "var(--grad)" }}>⚙</div>

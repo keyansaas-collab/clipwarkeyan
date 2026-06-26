@@ -78,7 +78,10 @@ function Home({ clips, name, place, arena, actions }: { clips: MyClip[]; name: s
   return (
     <>
       <RankUp views={total} />
-      <KeyanBanner src="/keyan-cash.jpg" height={130} caption="Transforme tes vues en cash 💸 — NO RISK NO STORY" style={{ marginBottom: 12 }} />
+      <div style={{ position: "relative", marginBottom: 12 }}>
+        <KeyanBanner src="/keyan-cash.jpg" height={130} caption="Transforme tes vues en cash 💸" />
+        <span className="sticker" style={{ position: "absolute", top: 10, right: 10 }}>NO RISK NO STORY</span>
+      </div>
       <div className="tip" onClick={() => actions.go(tip.go)} style={{ cursor: "pointer" }}>
         <div className="tip-ic">{tip.ic}</div>
         <div style={{ flex: 1 }}><div className="tip-t">{tip.t}</div><div className="tip-s">{tip.s}</div></div>
