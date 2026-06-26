@@ -21,7 +21,7 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
 
 .shell{max-width:440px;margin:0 auto;min-height:100vh;min-height:100dvh;
   position:relative;display:flex;flex-direction:column;
-  background:linear-gradient(180deg,rgba(9,6,15,.74) 0%,rgba(16,11,28,.74) 100%);
+  background:linear-gradient(180deg,rgba(9,6,15,.58) 0%,rgba(16,11,28,.62) 100%);
   border-left:1px solid var(--line);border-right:1px solid var(--line)}
 @media(max-width:460px){.shell{border:none}}
 
@@ -340,7 +340,7 @@ a.cliprow:hover .t{color:var(--violet2)}
 /* ============ GLOW-UP : ambiance + polish premium ============ */
 /* fond vivant : halos de couleur qui dérivent */
 .bg-live{position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none}
-.bg-live .blob{position:absolute;border-radius:50%;filter:blur(70px);opacity:.42;mix-blend-mode:screen;will-change:transform}
+.bg-live .blob{position:absolute;border-radius:50%;filter:blur(70px);opacity:.55;mix-blend-mode:screen;will-change:transform}
 .bg-live .b1{width:48vmax;height:48vmax;max-width:540px;max-height:540px;background:#8B6CFF;top:-14vmax;left:-12vmax;animation:f1 18s ease-in-out infinite}
 .bg-live .b2{width:44vmax;height:44vmax;max-width:500px;max-height:500px;background:#2DE2E6;top:-8vmax;right:-14vmax;animation:f2 22s ease-in-out infinite}
 .bg-live .b3{width:42vmax;height:42vmax;max-width:480px;max-height:480px;background:#F5C451;bottom:-16vmax;left:-10vmax;animation:f3 20s ease-in-out infinite}
@@ -396,4 +396,3 @@ a.cliprow:hover .t{color:var(--violet2)}
 /* cartes en verre dépoli (laissent transparaître le fond vivant) */
 .card{background:rgba(22,17,38,.6);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
 .stat,.adm-kpi,.kpi{background:rgba(22,17,38,.5)!important;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
-.shell{backdrop-filter:blur(2px)}
