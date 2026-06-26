@@ -346,17 +346,17 @@ body{background:transparent}
 body::before{
   content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background-color:#08070e;background-image:none;
 }
-/* projecteur qui balaie (intensité FORTE) */
+/* projecteur qui balaie (intensité FORTE, concentré) */
 body::after{
-  content:"";position:fixed;top:-12vh;left:50%;width:92vw;max-width:560px;height:78vh;z-index:-1;pointer-events:none;
+  content:"";position:fixed;top:-8vh;left:50%;width:130vw;max-width:760px;height:62vh;z-index:-1;pointer-events:none;
   transform-origin:50% 0%;
-  background:radial-gradient(ellipse 50% 60% at 50% 0%, rgba(171,141,255,.60), rgba(255,106,69,.18) 42%, transparent 70%);
-  filter:blur(12px);
+  background:radial-gradient(ellipse 46% 58% at 50% 0%, rgba(196,176,255,.95), rgba(171,141,255,.7) 24%, rgba(255,106,69,.34) 48%, transparent 72%);
+  filter:blur(8px);
   animation:beam 8s ease-in-out infinite;
 }
 @keyframes beam{
-  0%,100%{transform:translateX(-50%) translateX(-46px) rotate(-7deg)}
-  50%{transform:translateX(-50%) translateX(46px) rotate(7deg)}
+  0%,100%{transform:translateX(-50%) translateX(-60px) rotate(-8deg)}
+  50%{transform:translateX(-50%) translateX(60px) rotate(8deg)}
 }
 @media(prefers-reduced-motion:reduce){body::after{animation:none}}
 /* gros chiffres en italique lourd (street) */
@@ -412,3 +412,24 @@ body::after{
 /* cartes en verre dépoli (laissent transparaître le fond vivant) */
 .card{background:rgba(22,17,38,.6);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
 .stat,.adm-kpi,.kpi{background:rgba(22,17,38,.5)!important;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+
+/* ================= STREET SYSTEM — identité sur TOUTES les pages ================= */
+/* chiffres : italique lourd partout */
+.stat .v,.adm-kpi .v,.lp-kpi .v,.vue,.v{font-style:italic;font-weight:800;letter-spacing:-.5px}
+/* labels : capitales espacées */
+.stat .l,.adm-kpi .l,.lp-kpi .l{text-transform:uppercase;letter-spacing:.6px;font-weight:700;font-size:10px}
+.delta{font-style:italic;font-weight:800}
+/* titres de section : street + barre corail */
+.sec-h h2{text-transform:uppercase;font-style:italic;letter-spacing:.6px;display:flex;align-items:center;gap:9px}
+.sec-h h2::before{content:"";width:4px;height:15px;border-radius:2px;background:linear-gradient(180deg,#FF6A45,#FFB23E);flex-shrink:0}
+.eyebrow{color:var(--coral);font-weight:800}
+/* pills street */
+.pill{text-transform:uppercase;letter-spacing:.4px;font-style:italic}
+/* cartes : bord plus net */
+.card{border-color:rgba(255,255,255,.07)}
+/* sticker NO RISK NO STORY */
+.sticker{display:inline-block;background:#FF6A45;color:#120b08;font-size:10px;font-weight:900;font-style:italic;
+  padding:5px 11px;border-radius:7px;transform:rotate(-3deg);letter-spacing:.5px;text-transform:uppercase;
+  box-shadow:0 5px 16px rgba(255,106,69,.4)}
+/* gros titres de page admin en italique */
+h2.display{font-style:italic;letter-spacing:-.5px}
