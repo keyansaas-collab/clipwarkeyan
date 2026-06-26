@@ -16,7 +16,12 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="fr">
-      <body><UpdateWatcher />{children}</body>
+      <body>
+        <div className="bg-live" aria-hidden="true">
+          <span className="blob b1" /><span className="blob b2" /><span className="blob b3" /><span className="blob b4" />
+        </div>
+        <UpdateWatcher />{children}
+      </body>
     </html>
   );
 }

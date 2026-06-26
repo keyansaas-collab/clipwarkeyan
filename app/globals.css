@@ -21,7 +21,7 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
 
 .shell{max-width:440px;margin:0 auto;min-height:100vh;min-height:100dvh;
   position:relative;display:flex;flex-direction:column;
-  background:linear-gradient(180deg,var(--bg) 0%,var(--bg2) 100%);
+  background:linear-gradient(180deg,rgba(9,6,15,.74) 0%,rgba(16,11,28,.74) 100%);
   border-left:1px solid var(--line);border-right:1px solid var(--line)}
 @media(max-width:460px){.shell{border:none}}
 
@@ -338,12 +338,18 @@ a.cliprow:hover .t{color:var(--violet2)}
 }
 
 /* ============ GLOW-UP : ambiance + polish premium ============ */
-@keyframes auroraDrift{0%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(4%,3%,0) scale(1.14)}100%{transform:translate3d(0,0,0) scale(1)}}
-body::before{animation:auroraDrift 26s ease-in-out infinite}
-body::after{content:"";position:fixed;inset:-20%;z-index:-1;pointer-events:none;opacity:.55;
-  background:radial-gradient(600px 440px at 18% 92%,rgba(245,178,62,.10),transparent 60%),
-             radial-gradient(640px 460px at 92% 82%,rgba(255,106,69,.08),transparent 60%);
-  animation:auroraDrift 34s ease-in-out infinite reverse}
+/* fond vivant : halos de couleur qui dérivent */
+.bg-live{position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none}
+.bg-live .blob{position:absolute;border-radius:50%;filter:blur(70px);opacity:.42;mix-blend-mode:screen;will-change:transform}
+.bg-live .b1{width:48vmax;height:48vmax;max-width:540px;max-height:540px;background:#8B6CFF;top:-14vmax;left:-12vmax;animation:f1 18s ease-in-out infinite}
+.bg-live .b2{width:44vmax;height:44vmax;max-width:500px;max-height:500px;background:#2DE2E6;top:-8vmax;right:-14vmax;animation:f2 22s ease-in-out infinite}
+.bg-live .b3{width:42vmax;height:42vmax;max-width:480px;max-height:480px;background:#F5C451;bottom:-16vmax;left:-10vmax;animation:f3 20s ease-in-out infinite}
+.bg-live .b4{width:40vmax;height:40vmax;max-width:440px;max-height:440px;background:#FF6A45;bottom:-14vmax;right:-10vmax;animation:f4 24s ease-in-out infinite}
+@keyframes f1{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(160px,120px) scale(1.25)}}
+@keyframes f2{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-140px,150px) scale(1.2)}}
+@keyframes f3{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(150px,-130px) scale(1.3)}}
+@keyframes f4{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-130px,-120px) scale(1.2)}}
+@media(prefers-reduced-motion:reduce){.bg-live .blob{animation:none}}
 
 /* montants en or brillant */
 .gold{background:linear-gradient(100deg,#F5C451,#FFE9A8 38%,#F5C451 66%,#C9881E);
@@ -386,3 +392,8 @@ body::after{content:"";position:fixed;inset:-20%;z-index:-1;pointer-events:none;
 .rankup-name{font-family:"Space Grotesk";font-weight:800;font-size:34px;letter-spacing:1px;margin-top:16px;z-index:2;animation:fadeUp .5s .2s both}
 .rankup-sub{color:var(--mut);font-size:12px;letter-spacing:3px;text-transform:uppercase;font-weight:700;margin-top:2px;z-index:2;animation:fadeUp .5s .3s both}
 .rankup-btn{margin-top:26px;z-index:2;animation:fadeUp .5s .45s both}
+
+/* cartes en verre dépoli (laissent transparaître le fond vivant) */
+.card{background:rgba(22,17,38,.6);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+.stat,.adm-kpi,.kpi{background:rgba(22,17,38,.5)!important;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.shell{backdrop-filter:blur(2px)}

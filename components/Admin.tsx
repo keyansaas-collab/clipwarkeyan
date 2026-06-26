@@ -5,6 +5,7 @@ import { Hud, Avatar } from "./ui";
 import { getSupabase } from "@/lib/supabase/client";
 import { celebrate } from "@/lib/confetti";
 import RankSeal, { rankForViews } from "./RankSeal";
+import CountUp from "./CountUp";
 import { KeyanBanner } from "./KeyanArt";
 import { useSettings, setSetting } from "@/lib/settings";
 import { fmt, euro, platLabel, agoLabel } from "@/lib/data";
@@ -247,10 +248,10 @@ function Dash({ data, catalog, isOwner, actions }: { data: AdminData; catalog: C
       )}
       <RefreshViewsButton actions={actions} />
       <div className="adm-kpis">
-        <div className="adm-kpi"><div className="v gr">{data.dash.vues_7 >= 1e6 ? (Math.round(data.dash.vues_7 / 1e5) / 10) + "M" : fmt(data.dash.vues_7)}</div><div className="l">vues nettes · 7 j</div></div>
-        <div className="adm-kpi"><div className="v">{euro(data.dash.a_verser)}</div><div className="l">dû en attente</div></div>
-        <div className="adm-kpi"><div className="v">{data.dash.clippers_actifs}</div><div className="l">clippers actifs</div></div>
-        <div className="adm-kpi"><div className="v">{data.dash.pubs_7}</div><div className="l">pubs · 7 j</div></div>
+        <div className="adm-kpi"><div className="v gr">{data.dash.vues_7 >= 1e6 ? (Math.round(data.dash.vues_7 / 1e5) / 10) + "M" : <CountUp value={data.dash.vues_7} />}</div><div className="l">vues nettes · 7 j</div></div>
+        <div className="adm-kpi"><div className="v gold"><CountUp value={data.dash.a_verser} format={euro} /></div><div className="l">dû en attente</div></div>
+        <div className="adm-kpi"><div className="v"><CountUp value={data.dash.clippers_actifs} /></div><div className="l">clippers actifs</div></div>
+        <div className="adm-kpi"><div className="v"><CountUp value={data.dash.pubs_7} /></div><div className="l">pubs · 7 j</div></div>
       </div>
 
       <div className="sec-h"><h2>Vues nettes · 7 derniers jours</h2></div>
@@ -700,7 +701,7 @@ function Payments({ data, actions }: { data: AdminData; actions: AdmActions }) {
       <KeyanBanner src="/keyan-cash.jpg" height={120} caption="Paie tes troupes 💸 — NO RISK NO STORY" style={{ marginBottom: 12 }} />
       <div className="card" style={{ background: "linear-gradient(150deg,rgba(53,230,161,.12),rgba(45,226,230,.04)),var(--surf)", borderColor: "rgba(53,230,161,.25)", marginBottom: 12 }}>
         <div style={{ fontSize: 12, color: "var(--mut)", fontWeight: 600 }}>Dû en attente (cumulatif réel)</div>
-        <div className="display" style={{ fontSize: 34, fontWeight: 700, margin: "4px 0" }}>{euro(data.dash.a_verser)}</div>
+        <div className="display gold" style={{ fontSize: 34, fontWeight: 700, margin: "4px 0" }}><CountUp value={data.dash.a_verser} format={euro} /></div>
         <div style={{ fontSize: 12, color: "var(--mut)" }}>{due.length} clipper{due.length > 1 ? "s" : ""} avec un solde · {euro(totalPaid)} déjà versés au total</div>
       </div>
       <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>

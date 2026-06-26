@@ -5,6 +5,8 @@ import { Icon, Avatar } from "./ui";
 import { getSupabase } from "@/lib/supabase/client";
 import { celebrate } from "@/lib/confetti";
 import RankSeal from "./RankSeal";
+import RankUp from "./RankUp";
+import CountUp from "./CountUp";
 import { KeyanBanner } from "./KeyanArt";
 import {
   platLabel, fmt, euro, MyClip,
@@ -75,6 +77,7 @@ function Home({ clips, name, place, arena, actions }: { clips: MyClip[]; name: s
 
   return (
     <>
+      <RankUp views={total} />
       <KeyanBanner src="/keyan-cash.jpg" height={130} caption="Transforme tes vues en cash 💸 — NO RISK NO STORY" style={{ marginBottom: 12 }} />
       <div className="tip" onClick={() => actions.go(tip.go)} style={{ cursor: "pointer" }}>
         <div className="tip-ic">{tip.ic}</div>
@@ -84,7 +87,7 @@ function Home({ clips, name, place, arena, actions }: { clips: MyClip[]; name: s
 
       <div className="card" style={{ background: "linear-gradient(150deg,rgba(139,108,255,.2),rgba(45,226,230,.06)),var(--surf)", borderColor: "var(--line2)" }}>
         <div style={{ fontSize: 12, color: "var(--mut)", fontWeight: 600 }}>À recevoir</div>
-        <div className="display" style={{ fontSize: 38, fontWeight: 700, margin: "4px 0", letterSpacing: "-1px" }}>{euro(gain)}</div>
+        <div className="display gold" style={{ fontSize: 38, fontWeight: 700, margin: "4px 0", letterSpacing: "-1px" }}><CountUp value={gain} format={euro} /></div>
         <div style={{ fontSize: 12.5, color: "var(--mut)" }}>{fmt(dueViews)} vues à payer · {clips.length} clips</div>
         <div className="meter"><i style={{ width: Math.min(100, (gain / SEUIL) * 100) + "%" }} /></div>
         <div style={{ fontSize: 11.5, color: "var(--mut)", marginTop: 7 }}>Seuil de paiement : {SEUIL} € {gain >= SEUIL ? "— atteint ✓" : `· encore ${euro(SEUIL - gain)}`}</div>
@@ -342,7 +345,7 @@ function Bilan({ clips, actions }: { clips: MyClip[]; actions: ClipActions }) {
       <h2 className="display" style={{ fontSize: 22, margin: "4px 0 12px" }}>Ton bilan</h2>
       <div className="card" style={{ background: "linear-gradient(150deg,rgba(53,230,161,.14),rgba(45,226,230,.05)),var(--surf)", borderColor: "rgba(53,230,161,.25)" }}>
         <div style={{ fontSize: 12, color: "var(--mut)", fontWeight: 600 }}>À recevoir · vues non encore payées</div>
-        <div className="display" style={{ fontSize: 40, fontWeight: 700, margin: "6px 0", letterSpacing: "-1px" }}>{euro(gain)}</div>
+        <div className="display gold" style={{ fontSize: 40, fontWeight: 700, margin: "6px 0", letterSpacing: "-1px" }}><CountUp value={gain} format={euro} /></div>
         <div style={{ fontSize: 12.5, color: "var(--mut)" }}>{fmt(dueViews)} vues à payer · {euro(paid)} déjà reçus</div>
         <div className="meter"><i style={{ width: Math.min(100, (gain / SEUIL) * 100) + "%", background: "var(--mint)" }} /></div>
         <div style={{ fontSize: 11.5, color: "var(--mut)", marginTop: 8 }}>Seuil de paiement : {SEUIL} € {gain >= SEUIL ? "— atteint ✓" : `· encore ${euro(SEUIL - gain)}`}</div>
@@ -353,7 +356,7 @@ function Bilan({ clips, actions }: { clips: MyClip[]; actions: ClipActions }) {
             ✓ Demande de paiement envoyée ({euro(pending.amount)}) — en attente de validation du staff.
           </div>
         ) : (
-          <button className="btn btn-pri" style={{ marginTop: 9, padding: 13 }} onClick={askPayout} disabled={busyReq || gain <= 0}>{busyReq ? "Envoi…" : "Demander mon paiement 💸"}</button>
+          <button className={"btn btn-pri" + (gain >= SEUIL ? " pulse-gold" : "")} style={{ marginTop: 9, padding: 13 }} onClick={askPayout} disabled={busyReq || gain <= 0}>{busyReq ? "Envoi…" : "Demander mon paiement 💸"}</button>
         )}
       </div>
       <div className="sec-h"><h2>Comment c&apos;est calculé</h2></div>
