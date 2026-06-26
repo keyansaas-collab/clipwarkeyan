@@ -200,10 +200,13 @@ function RefreshViewsButton({ actions }: { actions: AdmActions }) {
   const [busy, setBusy] = useState(false);
   async function run() {
     setBusy(true);
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 80000);
     try {
       const { data: s } = await getSupabase().auth.getSession();
       const token = s.session?.access_token;
-      const res = await fetch("/api/admin/refresh-views", { method: "POST", headers: { authorization: `Bearer ${token}` } });
+      const res = await fetch("/api/admin/refresh-views", { method: "POST", headers: { authorization: `Bearer ${token}` }, signal: ctrl.signal });
+      clearTimeout(to);
       const j = await res.json();
       if (!res.ok) { actions.showToast(j.error === "forbidden" ? "Réservé au staff" : "Échec du relevé"); }
       else {
@@ -212,7 +215,11 @@ function RefreshViewsButton({ actions }: { actions: AdmActions }) {
           .map((p) => `${p === "tiktok" ? "TT" : p === "instagram" ? "IG" : "YT"} ${bp[p].ok}/${bp[p].ok + bp[p].fail}`).join(" · ");
         actions.showToast(`Relevé : ${j.inserted} maj${seg ? " · " + seg : ""}`);
       }
-    } catch { actions.showToast("Erreur réseau"); }
+    } catch (e: any) {
+      clearTimeout(to);
+      if (e?.name === "AbortError") actions.showToast("Relevé lancé — ça continue en arrière-plan, recharge dans 1-2 min");
+      else actions.showToast("Erreur réseau");
+    }
     setBusy(false);
   }
   return (

@@ -5,6 +5,7 @@ import { Icon, Avatar } from "./ui";
 import { getSupabase } from "@/lib/supabase/client";
 import { celebrate } from "@/lib/confetti";
 import RankSeal from "./RankSeal";
+import { KeyanBanner } from "./KeyanArt";
 import {
   platLabel, fmt, euro, MyClip,
 } from "@/lib/data";
@@ -74,6 +75,7 @@ function Home({ clips, name, place, arena, actions }: { clips: MyClip[]; name: s
 
   return (
     <>
+      <KeyanBanner src="/keyan-cash.jpg" height={130} caption="Transforme tes vues en cash 💸 — NO RISK NO STORY" style={{ marginBottom: 12 }} />
       <div className="tip" onClick={() => actions.go(tip.go)} style={{ cursor: "pointer" }}>
         <div className="tip-ic">{tip.ic}</div>
         <div style={{ flex: 1 }}><div className="tip-t">{tip.t}</div><div className="tip-s">{tip.s}</div></div>
@@ -308,14 +310,20 @@ function Bilan({ clips, actions }: { clips: MyClip[]; actions: ClipActions }) {
 
   async function refreshMyViews() {
     setBusyRef(true);
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 60000);
     try {
       const { data: s } = await getSupabase().auth.getSession();
-      const res = await fetch("/api/clipper/refresh-views", { method: "POST", headers: { authorization: `Bearer ${s.session?.access_token}` } });
+      const res = await fetch("/api/clipper/refresh-views", { method: "POST", headers: { authorization: `Bearer ${s.session?.access_token}` }, signal: ctrl.signal });
+      clearTimeout(to);
       const j = await res.json();
       if (res.status === 429) actions.showToast(`Patiente encore ${Math.ceil((j.retryInSec || 60) / 60)} min`);
       else if (!res.ok) actions.showToast("Échec du relevé");
       else actions.showToast("Vues mises à jour ✨ — recharge dans un instant");
-    } catch { actions.showToast("Erreur réseau"); }
+    } catch (e: any) {
+      clearTimeout(to);
+      actions.showToast(e?.name === "AbortError" ? "Ça continue en arrière-plan — recharge dans 1 min" : "Erreur réseau");
+    }
     setBusyRef(false);
   }
   async function askPayout() {
