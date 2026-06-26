@@ -336,3 +336,53 @@ a.cliprow:hover .t{color:var(--violet2)}
   .lp-steps,.lp-feats{grid-template-columns:1fr}
   .lp-section h2,.lp-foot h2{font-size:23px}
 }
+
+/* ============ GLOW-UP : ambiance + polish premium ============ */
+@keyframes auroraDrift{0%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(4%,3%,0) scale(1.14)}100%{transform:translate3d(0,0,0) scale(1)}}
+body::before{animation:auroraDrift 26s ease-in-out infinite}
+body::after{content:"";position:fixed;inset:-20%;z-index:-1;pointer-events:none;opacity:.55;
+  background:radial-gradient(600px 440px at 18% 92%,rgba(245,178,62,.10),transparent 60%),
+             radial-gradient(640px 460px at 92% 82%,rgba(255,106,69,.08),transparent 60%);
+  animation:auroraDrift 34s ease-in-out infinite reverse}
+
+/* montants en or brillant */
+.gold{background:linear-gradient(100deg,#F5C451,#FFE9A8 38%,#F5C451 66%,#C9881E);
+  -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent}
+
+/* verre dépoli (optionnel via classe) */
+.glass{background:rgba(22,17,38,.55)!important;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.08)!important}
+
+/* pression tactile + cartes vivantes */
+.press{transition:transform .12s cubic-bezier(.2,.8,.2,1)}.press:active{transform:scale(.97)}
+.btn:active{transform:scale(.97)}
+.card{transition:transform .15s ease,border-color .25s ease}
+.row{transition:background .2s ease}
+
+/* point d'activité qui bat */
+@keyframes beat{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.4);opacity:.55}}
+.dot{animation:beat 1.9s ease-in-out infinite}
+
+/* shimmer de chargement */
+@keyframes shimmerMove{100%{background-position:-200% 0}}
+.shimmer{background:linear-gradient(90deg,var(--surf) 25%,var(--surf2) 50%,var(--surf) 75%);background-size:200% 100%;animation:shimmerMove 1.3s linear infinite;border-radius:10px}
+
+/* halo doré pulsant (actions clés) */
+@keyframes goldPulse{0%,100%{box-shadow:0 0 0 0 rgba(245,196,81,0)}50%{box-shadow:0 0 22px 2px rgba(245,196,81,.5)}}
+.pulse-gold{animation:goldPulse 2.2s ease-in-out infinite}
+
+/* apparition en fondu des listes */
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.fade-in{animation:fadeUp .4s ease both}
+
+/* ===== montée de rang cinématique ===== */
+@keyframes rkSpin{to{transform:rotate(360deg)}}
+.rankup-ov{position:fixed;inset:0;z-index:999;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  background:radial-gradient(circle at 50% 44%,rgba(20,12,40,.55),rgba(6,5,12,.93));backdrop-filter:blur(6px);animation:fadeUp .35s ease both;padding:24px;text-align:center}
+.rankup-rays{position:absolute;width:540px;height:540px;border-radius:50%;
+  background:conic-gradient(from 0deg,transparent,rgba(245,196,81,.18),transparent,rgba(45,226,230,.14),transparent,rgba(139,108,255,.16),transparent);
+  filter:blur(8px);animation:rkSpin 14s linear infinite}
+.rankup-seal{z-index:2;animation:sealPop .75s cubic-bezier(.2,1.3,.4,1) both}
+@keyframes sealPop{0%{transform:scale(.3) rotate(-22deg);opacity:0}60%{transform:scale(1.12) rotate(4deg);opacity:1}100%{transform:scale(1) rotate(0)}}
+.rankup-name{font-family:"Space Grotesk";font-weight:800;font-size:34px;letter-spacing:1px;margin-top:16px;z-index:2;animation:fadeUp .5s .2s both}
+.rankup-sub{color:var(--mut);font-size:12px;letter-spacing:3px;text-transform:uppercase;font-weight:700;margin-top:2px;z-index:2;animation:fadeUp .5s .3s both}
+.rankup-btn{margin-top:26px;z-index:2;animation:fadeUp .5s .45s both}
