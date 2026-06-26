@@ -21,7 +21,7 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
 
 .shell{max-width:440px;margin:0 auto;min-height:100vh;min-height:100dvh;
   position:relative;display:flex;flex-direction:column;
-  background:linear-gradient(180deg,rgba(9,6,15,.58) 0%,rgba(16,11,28,.62) 100%);
+  background:linear-gradient(180deg,rgba(9,6,15,.46) 0%,rgba(16,11,28,.52) 100%);
   border-left:1px solid var(--line);border-right:1px solid var(--line)}
 @media(max-width:460px){.shell{border:none}}
 
@@ -339,12 +339,28 @@ a.cliprow:hover .t{color:var(--violet2)}
 
 /* ============ GLOW-UP : ambiance + polish premium ============ */
 /* fond vivant : halos de couleur qui dérivent */
-.bg-live{position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none}
-.bg-live .blob{position:absolute;border-radius:50%;filter:blur(70px);opacity:.55;mix-blend-mode:screen;will-change:transform}
-.bg-live .b1{width:48vmax;height:48vmax;max-width:540px;max-height:540px;background:#8B6CFF;top:-14vmax;left:-12vmax;animation:f1 18s ease-in-out infinite}
-.bg-live .b2{width:44vmax;height:44vmax;max-width:500px;max-height:500px;background:#2DE2E6;top:-8vmax;right:-14vmax;animation:f2 22s ease-in-out infinite}
-.bg-live .b3{width:42vmax;height:42vmax;max-width:480px;max-height:480px;background:#F5C451;bottom:-16vmax;left:-10vmax;animation:f3 20s ease-in-out infinite}
-.bg-live .b4{width:40vmax;height:40vmax;max-width:440px;max-height:440px;background:#FF6A45;bottom:-14vmax;right:-10vmax;animation:f4 24s ease-in-out infinite}
+/* fond vivant : halos de couleur (CSS only, robuste iOS) */
+.bg-live{display:none}
+body{background:transparent}
+/* scène sombre */
+body::before{
+  content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background-color:#08070e;background-image:none;
+}
+/* projecteur qui balaie (intensité FORTE) */
+body::after{
+  content:"";position:fixed;top:-12vh;left:50%;width:92vw;max-width:560px;height:78vh;z-index:-1;pointer-events:none;
+  transform-origin:50% 0%;
+  background:radial-gradient(ellipse 50% 60% at 50% 0%, rgba(171,141,255,.60), rgba(255,106,69,.18) 42%, transparent 70%);
+  filter:blur(12px);
+  animation:beam 8s ease-in-out infinite;
+}
+@keyframes beam{
+  0%,100%{transform:translateX(-50%) translateX(-46px) rotate(-7deg)}
+  50%{transform:translateX(-50%) translateX(46px) rotate(7deg)}
+}
+@media(prefers-reduced-motion:reduce){body::after{animation:none}}
+/* gros chiffres en italique lourd (street) */
+.gold{font-style:italic;font-weight:800;letter-spacing:-1.5px}
 @keyframes f1{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(160px,120px) scale(1.25)}}
 @keyframes f2{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-140px,150px) scale(1.2)}}
 @keyframes f3{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(150px,-130px) scale(1.3)}}
