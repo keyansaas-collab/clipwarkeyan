@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { Icon, Avatar } from "./ui";
 import { getSupabase } from "@/lib/supabase/client";
 import { celebrate } from "@/lib/confetti";
+import RankSeal from "./RankSeal";
 import {
   platLabel, fmt, euro, MyClip,
 } from "@/lib/data";
@@ -26,11 +27,11 @@ function dcl(d: number) { return d > 0 ? "up" : d < 0 ? "down" : "flat"; }
 function dtx(d: number) { return (d > 0 ? "+" : "") + fmt(d); }
 
 function rankInfo(total: number) {
-  const tiers: [string, number][] = [["Recrue", 0], ["Sergent", 100000], ["Lieutenant", 500000], ["Capitaine", 2000000], ["Général", 10000000]];
+  const tiers: [string, number][] = [["Recrue", 0], ["Ambitieux", 10000], ["Hustler", 25000], ["Closer", 50000], ["Boss", 120000], ["Mogul", 300000], ["Légende Dubai", 750000]];
   let idx = 0;
   tiers.forEach((t, i) => { if (total >= t[1]) idx = i; });
   const next = tiers[idx + 1] || null;
-  return { rank: tiers[idx][0], base: tiers[idx][1], level: Math.max(1, Math.floor(total / 100000) + 1), next: next ? { label: next[0], at: next[1] } : null };
+  return { rank: tiers[idx][0], base: tiers[idx][1], level: idx + 1, next: next ? { label: next[0], at: next[1] } : null };
 }
 function agoTxt(d?: number) { return d == null ? "" : d === 0 ? "aujourd'hui" : d === 1 ? "hier" : `il y a ${d} j`; }
 
@@ -88,12 +89,17 @@ function Home({ clips, name, place, arena, actions }: { clips: MyClip[]; name: s
       </div>
 
       <div className="sec-h"><h2>Ta progression</h2></div>
-      <div className="card">
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 600 }}>
-          <span>{r.rank} · Niveau {r.level}</span>{r.next && <span style={{ color: "var(--mut)" }}>{r.next.label}</span>}
+      <div className="card" style={{ display: "flex", gap: 14, alignItems: "center" }}>
+        <RankSeal views={total} size={76} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700 }}>
+            <span>{r.rank}</span>{r.next && <span style={{ color: "var(--mut)", fontWeight: 600 }}>{r.next.label}</span>}
+          </div>
+          <div className="bar" style={{ background: "var(--bg2)" }}><i style={{ width: prog + "%" }} /></div>
+          {r.next
+            ? <div style={{ fontSize: 12, color: "var(--mut)", marginTop: 8 }}>Encore <b style={{ color: "var(--text)" }}>{fmt(r.next.at - total)}</b> vues pour passer <b style={{ color: "var(--text)" }}>{r.next.label}</b>.</div>
+            : <div style={{ fontSize: 12, color: "var(--mut)", marginTop: 8 }}>Rang maximum atteint 👑 Légende Dubai.</div>}
         </div>
-        <div className="bar" style={{ background: "var(--bg2)" }}><i style={{ width: prog + "%" }} /></div>
-        {r.next && <div style={{ fontSize: 12, color: "var(--mut)", marginTop: 8 }}>Encore <b style={{ color: "var(--text)" }}>{fmt(r.next.at - total)}</b> vues pour passer {r.next.label}.</div>}
       </div>
 
       {liveChallenges.length > 0 && (
@@ -444,8 +450,17 @@ function Profil({ userId, email, vuesTotal, reloadProfile, actions }: { userId: 
           </label>
         </div>
       </div>
+      <div className="card" style={{ display: "flex", gap: 16, alignItems: "center", background: "linear-gradient(150deg,rgba(245,196,81,.10),rgba(139,108,255,.05)),var(--surf)" }}>
+        <RankSeal views={vuesTotal} size={92} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 11, color: "var(--mut)", fontWeight: 700, letterSpacing: 1, textTransform: "uppercase" }}>Ton rang</div>
+          <div className="display" style={{ fontSize: 22, margin: "2px 0 4px" }}>{r.rank}</div>
+          {r.next
+            ? <div style={{ fontSize: 12, color: "var(--mut)" }}>Encore <b style={{ color: "var(--text)" }}>{fmt(r.next.at - vuesTotal)}</b> vues → <b style={{ color: "var(--text)" }}>{r.next.label}</b></div>
+            : <div style={{ fontSize: 12, color: "var(--mut)" }}>Rang ultime 👑</div>}
+        </div>
+      </div>
       <div className="stats">
-        <div className="stat"><div className="v mono">{r.level}</div><div className="l">niveau</div></div>
         <div className="stat"><div className="v mono">{r.rank}</div><div className="l">rang</div></div>
         <div className="stat"><div className="v mono">{fmt(vuesTotal)}</div><div className="l">vues totales</div></div>
       </div>

@@ -4,6 +4,8 @@ import React, { useState, useEffect } from "react";
 import { Hud, Avatar } from "./ui";
 import { getSupabase } from "@/lib/supabase/client";
 import { celebrate } from "@/lib/confetti";
+import RankSeal, { rankForViews } from "./RankSeal";
+import { KeyanBanner } from "./KeyanArt";
 import { useSettings, setSetting } from "@/lib/settings";
 import { fmt, euro, platLabel, agoLabel } from "@/lib/data";
 import { Catalog, AssetReal, campNameOf, campGradOf, initialsOf } from "@/lib/catalog";
@@ -263,7 +265,7 @@ function Dash({ data, catalog, isOwner, actions }: { data: AdminData; catalog: C
           : topClippers.length ? topClippers.map((c, i) => (
             <div className="row" key={c.id} style={{ cursor: "pointer" }} onClick={() => actions.openClipper(c.id)}>
               <div className="thumb" style={{ width: 32, height: 32, fontSize: 12, background: i === 0 ? "var(--grad-coral)" : "var(--surf2)", color: i === 0 ? "#0a0610" : "var(--mut)" }}>{i + 1}</div>
-              <div style={{ flex: 1 }}><div className="t">{c.name}</div><div className="s">{c.rank} · {c.clips} clips</div></div>
+              <div style={{ flex: 1 }}><div className="t">{c.name}</div><div className="s">{rankForViews(c.vues_total).tier.name} · {c.clips} clips</div></div>
               <div className="end"><div className="vue mono">{fmt(c.vues_7)}</div><div className="delta up">{euro(c.gain)}</div></div>
             </div>
           )) : <div className="empty">Aucun clipper inscrit pour l&apos;instant.</div>}
@@ -289,9 +291,10 @@ function Clippers({ data, actions }: { data: AdminData; actions: AdmActions }) {
               <Avatar url={c.avatar_url} name={c.name} size={40} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="t">{c.name} {c.is_minor && <span className="adm-minor">mineur</span>}</div>
-                <div className="s">{c.rank}{c.country ? " · " + c.country : ""} · {c.clips} clips</div>
+                <div className="s">{rankForViews(c.vues_total).tier.name}{c.country ? " · " + c.country : ""} · {c.clips} clips</div>
               </div>
-              <div className="end"><div className="vue mono">{fmt(c.vues_7)}</div><div className="delta up">{euro(c.gain)} à verser</div></div>
+              <RankSeal views={c.vues_total} size={30} spin={false} />
+              <div className="end" style={{ marginLeft: 8 }}><div className="vue mono">{fmt(c.vues_7)}</div><div className="delta up">{euro(c.gain)} à verser</div></div>
             </div>
           )) : <div className="empty">Aucun clipper inscrit. Partage le lien d&apos;inscription à ton équipe.</div>}
       </div>
@@ -313,8 +316,9 @@ function ClipperDetail({ c, data, actions }: { c: AdmClipper; data: AdminData; a
         <Avatar url={c.avatar_url} name={c.name} size={52} square />
         <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 600, fontSize: 17 }} className="display">{c.name}</div>
-          <div className="s">{c.rank}{c.country ? " · " + c.country : ""}</div>
+          <div className="s">{rankForViews(c.vues_total).tier.name}{c.country ? " · " + c.country : ""}</div>
         </div>
+        <RankSeal views={c.vues_total} size={46} spin={false} />
         {c.is_minor ? <span className="adm-minor">mineur</span> : <span className="adm-major">majeur</span>}
       </div>
 
@@ -628,7 +632,8 @@ function Fraud({ data, actions }: { data: AdminData; actions: AdmActions }) {
   return (
     <>
       <div className="eyebrow" style={{ marginTop: 14 }}>Bouclier</div>
-      <h2 className="display" style={{ fontSize: 22, margin: "4px 0 4px" }}>Anti-triche</h2>
+      <h2 className="display" style={{ fontSize: 22, margin: "4px 0 10px" }}>Anti-triche</h2>
+      <KeyanBanner src="/keyan-alert.jpg" height={120} caption="On touche pas à l'empire — surveillance active" style={{ marginBottom: 12 }} />
       <p style={{ color: "var(--mut)", fontSize: 12.5, marginBottom: 12 }}>Touche une alerte pour ouvrir la vidéo et vérifier, puis tranche : fausse alerte (réactiver) ou anomalie confirmée (garder gelé).</p>
       {data.loading ? <div className="card"><div className="empty">Chargement…</div></div>
         : list.length ? list.map((a) => (
@@ -646,7 +651,7 @@ function Fraud({ data, actions }: { data: AdminData; actions: AdmActions }) {
               <button className="btn btn-gh" style={{ flex: 1, padding: 9, fontSize: 12.5, color: "var(--coral)" }} disabled={busy === a.id} onClick={() => resolve(a.id, false)}>Anomalie · garder gelé</button>
             </div>
           </div>
-        )) : <div className="card"><div className="empty">Aucune alerte. Tout est sain pour l&apos;instant.</div></div>}
+        )) : <div className="card" style={{ padding: 0, overflow: "hidden" }}><KeyanBanner src="/keyan-chill.jpg" height={150} caption="Le front est calme, commandant. Aucune alerte." radius={0} style={{ border: "none" }} /><div className="empty" style={{ padding: "12px" }}>Tout est sain pour l&apos;instant.</div></div>}
       <div className="sec-h"><h2>Règles actives</h2></div>
       <div className="card">
         {rules.map((r, i) => (
@@ -684,7 +689,8 @@ function Payments({ data, actions }: { data: AdminData; actions: AdmActions }) {
   return (
     <>
       <div className="eyebrow" style={{ marginTop: 14 }}>Versements</div>
-      <h2 className="display" style={{ fontSize: 22, margin: "4px 0 4px" }}>Paiements</h2>
+      <h2 className="display" style={{ fontSize: 22, margin: "4px 0 10px" }}>Paiements</h2>
+      <KeyanBanner src="/keyan-cash.jpg" height={120} caption="Paie tes troupes 💸 — NO RISK NO STORY" style={{ marginBottom: 12 }} />
       <div className="card" style={{ background: "linear-gradient(150deg,rgba(53,230,161,.12),rgba(45,226,230,.04)),var(--surf)", borderColor: "rgba(53,230,161,.25)", marginBottom: 12 }}>
         <div style={{ fontSize: 12, color: "var(--mut)", fontWeight: 600 }}>Dû en attente (cumulatif réel)</div>
         <div className="display" style={{ fontSize: 34, fontWeight: 700, margin: "4px 0" }}>{euro(data.dash.a_verser)}</div>

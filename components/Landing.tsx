@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { Icon } from "./ui";
 import { fmt } from "@/lib/data";
 import { getSupabase } from "@/lib/supabase/client";
+import { KeyanBanner } from "./KeyanArt";
 
 type LB = { name: string; vues: number };
 type PubCamp = { id: string; name: string; description: string | null; rate: number; accent: string | null; clips: number; vues: number };
@@ -69,6 +70,9 @@ export default function Landing() {
         <img className="lp-herologo" src="/clipwar-logo.png" alt="ClipWar" />
         <div className="lp-eyebrow"><span className="dot" /> Rejoins l&apos;armée de clippers</div>
         <h1 className="lp-h1">Clippe, poste, <span className="g">encaisse</span>.</h1>
+        <div style={{ margin: "14px 0 4px" }}>
+          <KeyanBanner src="/keyan-hero.jpg" height={190} radius={18} />
+        </div>
         <p className="lp-lead">
           Pioche dans les contenus, poste sur TikTok, Insta et YouTube, et sois payé à tes vues réelles —
           sans arnaque. Plus tu fais de vues, plus tu montes.
