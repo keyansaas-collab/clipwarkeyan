@@ -433,3 +433,23 @@ body::after{
   box-shadow:0 5px 16px rgba(255,106,69,.4)}
 /* gros titres de page admin en italique */
 h2.display{font-style:italic;letter-spacing:-.5px}
+
+/* carte classement : mini podium animé */
+.podium{display:flex;align-items:flex-end;gap:4px;height:44px;width:50px;flex-shrink:0}
+.podium i{display:block;width:12px;border-radius:4px 4px 0 0}
+.podium i:nth-child(1){background:linear-gradient(180deg,#EEF1F6,#7B8090);animation:pod1 2.4s ease-in-out infinite}
+.podium i:nth-child(2){background:linear-gradient(180deg,#FCE08A,#B5862A);box-shadow:0 0 10px rgba(245,196,81,.5);animation:pod2 2.4s ease-in-out infinite}
+.podium i:nth-child(3){background:linear-gradient(180deg,#F2B877,#7C4A20);animation:pod3 2.4s ease-in-out infinite}
+@keyframes pod1{0%,100%{height:42%}50%{height:64%}}
+@keyframes pod2{0%,100%{height:72%}50%{height:100%}}
+@keyframes pod3{0%,100%{height:30%}50%{height:50%}}
+@media(prefers-reduced-motion:reduce){.podium i{animation:none}.podium i:nth-child(1){height:55%}.podium i:nth-child(2){height:100%}.podium i:nth-child(3){height:40%}}
+
+/* champs de formulaire (modales setter) + toast */
+.fld{width:100%;background:var(--bg2);color:var(--text);border:1px solid var(--line2);border-radius:12px;
+  padding:12px 13px;font-size:14px;font-family:inherit;margin-bottom:4px;outline:none}
+.fld:focus{border-color:var(--cyan)}
+.fld-l{display:block;font-size:11px;color:var(--mut);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin:12px 0 5px}
+.cw-toast{position:fixed;bottom:108px;left:50%;transform:translateX(-50%);z-index:250;
+  background:#161126;border:1px solid var(--line2);color:var(--text);padding:11px 18px;border-radius:99px;
+  font-size:13px;font-weight:700;box-shadow:0 8px 30px rgba(0,0,0,.5);animation:fadeUp .3s ease both}
