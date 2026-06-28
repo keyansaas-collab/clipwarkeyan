@@ -526,12 +526,15 @@ function SettingsScreen({ actions }: { actions: AdmActions }) {
   const [win, setWin] = useState("");
   const [emailOn, setEmailOn] = useState(true);
   const [booking, setBooking] = useState("");
+  const [waGroup, setWaGroup] = useState("");
+  const [coldScript, setColdScript] = useState("");
+  const [commission, setCommission] = useState("");
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     if (s.raw && !ready) {
-      setDrive(s.driveUrl); setBonus(String(s.refBonus)); setMilestone(String(s.refMilestone)); setCap(String(s.viewCap)); setWin(String(s.payWindowDays)); setEmailOn(s.emailEnabled); setBooking(s.bookingUrl); setReady(true);
+      setDrive(s.driveUrl); setBonus(String(s.refBonus)); setMilestone(String(s.refMilestone)); setCap(String(s.viewCap)); setWin(String(s.payWindowDays)); setEmailOn(s.emailEnabled); setBooking(s.bookingUrl); setWaGroup(s.whatsappGroupUrl); setColdScript(s.coldScript); setCommission(String(s.commissionPct)); setReady(true);
     }
   }, [s.raw, ready]);
 
@@ -544,6 +547,9 @@ function SettingsScreen({ actions }: { actions: AdmActions }) {
       setSetting("view_cap", String(parseInt(cap.replace(/\s/g, ""), 10) || 100000)),
       setSetting("pay_window_days", String(Math.max(0, parseInt(win, 10) || 0))),
       setSetting("booking_url", booking.trim()),
+      setSetting("whatsapp_group_url", waGroup.trim()),
+      setSetting("cold_script", coldScript.trim()),
+      setSetting("commission_pct", String(Math.max(0, parseFloat(commission) || 0))),
       setSetting("email_enabled", emailOn ? "1" : "0"),
     ]);
     await s.reload();
@@ -588,6 +594,22 @@ function SettingsScreen({ actions }: { actions: AdmActions }) {
         <div className="field"><label>Lien de réservation du closer (Calendly ou Cal.com)</label>
           <input value={booking} onChange={(e) => setBooking(e.target.value)} placeholder="https://calendly.com/keyan/appel" />
           <div style={{ fontSize: 11.5, color: "var(--mut)", marginTop: 4 }}>C&apos;est le lien que le bouton « Caler le RDV » ouvrira dans la fiche prospect. Idéalement <b>un seul agenda</b> (celui du closer) pour que tous les RDV arrivent au même endroit.</div>
+        </div>
+      </div>
+
+      <div className="sec-h"><h2>Outbound froid (setters)</h2></div>
+      <div className="card">
+        <div className="field"><label>Lien du groupe WhatsApp</label>
+          <input value={waGroup} onChange={(e) => setWaGroup(e.target.value)} placeholder="https://chat.whatsapp.com/XXXX" />
+          <div style={{ fontSize: 11.5, color: "var(--mut)", marginTop: 4 }}>La destination du réchauffement : le setter y fait entrer ses leads froids. C&apos;est l&apos;actif que Keyan contrôle.</div>
+        </div>
+        <div className="field" style={{ marginTop: 12 }}><label>Script de premier message (froid)</label>
+          <textarea value={coldScript} onChange={(e) => setColdScript(e.target.value)} rows={3} placeholder="Hello ! On partage le même délire business…" style={{ width: "100%", fontFamily: "inherit" }} />
+          <div style={{ fontSize: 11.5, color: "var(--mut)", marginTop: 4 }}>Le message que le setter copie-colle pour démarrer. Le lien WhatsApp y sera ajouté automatiquement.</div>
+        </div>
+        <div className="field" style={{ marginTop: 12 }}><label>Commission setter (% de la vente)</label>
+          <input value={commission} onChange={(e) => setCommission(e.target.value)} inputMode="decimal" placeholder="0" />
+          <div style={{ fontSize: 11.5, color: "var(--mut)", marginTop: 4 }}>Sert au cockpit pour calculer la commission de chaque setter. Mets 0 tant que ce n&apos;est pas défini avec Keyan.</div>
         </div>
       </div>
 
