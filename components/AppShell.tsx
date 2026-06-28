@@ -18,7 +18,7 @@ import { linkReferral } from "@/lib/referral";
 
 type Role = "clip" | "adm" | "set";
 type NavLink = { id: string; label: string; icon: string };
-type Profile = { display_name: string | null; role: string; rank: string | null; onboarded?: boolean; setter_onboarded?: boolean; avatar_url?: string | null };
+type Profile = { display_name: string | null; role: string; rank: string | null; onboarded?: boolean; setter_onboarded?: boolean; avatar_url?: string | null; is_active?: boolean };
 
 export default function AppShell() {
   // ── auth ──
@@ -81,7 +81,7 @@ export default function AppShell() {
     if (!session) { setProfile(null); return; }
     getSupabase()
       .from("profiles")
-      .select("display_name, role, rank, onboarded, setter_onboarded, avatar_url")
+      .select("display_name, role, rank, onboarded, setter_onboarded, avatar_url, is_active")
       .eq("id", session.user.id)
       .maybeSingle()
       .then(({ data }) => setProfile((data as Profile) ?? { display_name: null, role: "clipper", rank: null, onboarded: false }));
@@ -291,6 +291,18 @@ export default function AppShell() {
         <div className="auth-wrap">
           <img className="logo-img big" src="/clipwar-logo.png" alt="ClipWar" style={{ margin: "0 auto" }} />
           <div className="auth-sub" style={{ marginTop: 12 }}>Chargement…</div>
+        </div>
+      </div>
+    );
+  }
+  if (profile.is_active === false) {
+    return (
+      <div className="shell">
+        <div className="auth-wrap" style={{ textAlign: "center" }}>
+          <img className="logo-img big" src="/clipwar-logo.png" alt="ClipWar" style={{ margin: "0 auto" }} />
+          <h2 style={{ marginTop: 16, fontStyle: "italic" }}>Compte désactivé</h2>
+          <div className="auth-sub" style={{ marginTop: 8 }}>Ton accès a été suspendu. Contacte l&apos;équipe si tu penses que c&apos;est une erreur.</div>
+          <button className="btn btn-gh" style={{ marginTop: 18, padding: 12 }} onClick={() => getSupabase().auth.signOut()}>Se déconnecter</button>
         </div>
       </div>
     );
