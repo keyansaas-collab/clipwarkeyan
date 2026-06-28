@@ -15,12 +15,12 @@ type Stats = { en_convo: number; pret_appel: number; rdv: number; vendus: number
   froid_contacte: number; froid_repondu: number; froid_whatsapp: number; qualifies: number };
 type SetterRow = { setter_id: string; name: string; avatar_url: string | null; clippers: number;
   contacted: number; replied: number; taux_reponse: number | null; rdv_booked: number; rdv_honored: number;
-  show_up: number | null; vendus: number; ca: number; avg_h: number | null };
+  show_up: number | null; vendus: number; ca: number; avg_h: number | null; is_active: boolean };
 type Overview = { contacted: number; replied: number; taux_reponse: number | null; rdv_booked: number;
   rdv_honored: number; show_up: number | null; qualifies: number; non_qualifies: number; vendus: number;
   ca: number; commission_base: number; avg_h: number | null; perdus: number };
 type Funnel = { stage: string; n: number };
-type Pod = { clipper_id: string; clipper_name: string; avatar_url: string | null; setter_id: string | null; setter_name: string | null };
+type Pod = { clipper_id: string; clipper_name: string; avatar_url: string | null; setter_id: string | null; setter_name: string | null; is_active: boolean };
 type Opt = { id: string; name: string };
 
 const SOURCES: { v: string; l: string; e: string }[] = [
@@ -71,6 +71,9 @@ export default function Setter({ isStaff, userName, userAvatar }: { isStaff: boo
   const [add, setAdd] = useState(false);
   const [bulk, setBulk] = useState(false);
   const [edit, setEdit] = useState<Prospect | null>(null);
+  const [detail, setDetail] = useState<SetterRow | null>(null);
+  const [detailRows, setDetailRows] = useState<Prospect[]>([]);
+  const [myNote, setMyNote] = useState("");
 
   const flash = (m: string) => { setToast(m); setTimeout(() => setToast(""), 2600); };
 
@@ -84,6 +87,10 @@ export default function Setter({ isStaff, userName, userAvatar }: { isStaff: boo
     setRows((p.data as Prospect[]) || []);
     setStats(((s.data as Stats[]) || [])[0] || { en_convo: 0, pret_appel: 0, rdv: 0, vendus: 0, ca: 0, froid_contacte: 0, froid_repondu: 0, froid_whatsapp: 0, qualifies: 0 });
     setClippers((c.data as Opt[]) || []);
+    if (!isStaff) {
+      const n = await db.rpc("my_coach_note");
+      setMyNote((n.data as string) || "");
+    }
     if (isStaff) {
       const [b, pd, st, ov, fn] = await Promise.all([
         db.rpc("admin_setters"), db.rpc("admin_pods"), db.rpc("list_setters"),
@@ -108,6 +115,17 @@ export default function Setter({ isStaff, userName, userAvatar }: { isStaff: boo
   async function assign(clipperId: string, setterId: string) {
     await db.rpc("assign_setter", { p_clipper: clipperId, p_setter: setterId || null });
     flash("Pod mis à jour");
+    load();
+  }
+  async function openDetail(s: SetterRow) {
+    const { data } = await db.rpc("admin_setter_prospects", { p_setter: s.setter_id });
+    setDetailRows((data as Prospect[]) || []);
+    setDetail(s);
+  }
+  async function toggleActive(userId: string, active: boolean, label: string) {
+    if (!active && !confirm(`Désactiver ${label} ? Son historique est conservé, il ne pourra plus se connecter. Réversible.`)) return;
+    await db.rpc("set_user_active", { p_user: userId, p_active: active });
+    flash(active ? "Réactivé ✓" : "Désactivé");
     load();
   }
 
@@ -137,6 +155,12 @@ export default function Setter({ isStaff, userName, userAvatar }: { isStaff: boo
       {/* ───────── PIPELINE ───────── */}
       {view === "pipe" && (
         <>
+          {!isStaff && myNote && (
+            <div className="card" style={{ marginTop: 12, background: "linear-gradient(150deg,rgba(139,108,255,.14),rgba(45,226,230,.05)),var(--surf)", borderColor: "rgba(139,108,255,.3)" }}>
+              <div style={{ fontSize: 10, color: "#8B6CFF", textTransform: "uppercase", letterSpacing: 1, fontWeight: 800, marginBottom: 4 }}>💬 Note de Keyan</div>
+              <div style={{ fontSize: 13, color: "var(--text)", whiteSpace: "pre-wrap" }}>{myNote}</div>
+            </div>
+          )}
           {stats && (
             <div className="stats" style={{ marginTop: 12 }}>
               <div className="stat"><div className="v">{stats.en_convo}</div><div className="l">en convo</div></div>
@@ -252,17 +276,18 @@ export default function Setter({ isStaff, userName, userAvatar }: { isStaff: boo
           <div className="sec-h" style={{ marginTop: 16 }}><h2>Classement des setters</h2></div>
           {board.length === 0 ? <div className="card"><div className="empty">Aucun setter. Promeus un membre (Supabase → profiles → role = setter).</div></div>
             : board.map((s, i) => (
-              <div key={s.setter_id} className="card" style={{ display: "flex", alignItems: "center", gap: 11, marginBottom: 9 }}>
+              <div key={s.setter_id} className="card press" onClick={() => openDetail(s)} style={{ display: "flex", alignItems: "center", gap: 11, marginBottom: 9, cursor: "pointer", opacity: s.is_active ? 1 : .55 }}>
                 <div style={{ fontWeight: 900, fontStyle: "italic", color: i === 0 ? "#F5C451" : "var(--mut)", width: 18 }}>{i + 1}</div>
                 <Avatar url={s.avatar_url} name={s.name} size={38} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 700 }}>{s.name}</div>
+                  <div style={{ fontWeight: 700 }}>{s.name}{!s.is_active && <span style={{ fontSize: 9, fontWeight: 900, textTransform: "uppercase", color: "#FF6A45", marginLeft: 6 }}>désactivé</span>}</div>
                   <div style={{ fontSize: 11, color: "var(--mut)", fontWeight: 700 }}>{s.clippers} clip · {pct(s.taux_reponse)} rép · {pct(s.show_up)} show-up</div>
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <div className="gold" style={{ fontWeight: 800, fontStyle: "italic" }}>{euro(s.ca)}</div>
                   <div style={{ fontSize: 11, color: "var(--mut)" }}>{s.rdv_booked} rdv · {s.vendus} vendus</div>
                 </div>
+                <span style={{ color: "var(--mut)", fontSize: 18 }}>›</span>
               </div>
             ))}
         </>
@@ -274,14 +299,23 @@ export default function Setter({ isStaff, userName, userAvatar }: { isStaff: boo
           <div className="sec-h" style={{ marginTop: 14 }}><h2>Pods · clipper → setter</h2></div>
           {pods.length === 0 ? <div className="card"><div className="empty">Aucun clipper.</div></div>
             : pods.map((c) => (
-              <div key={c.clipper_id} className="card" style={{ display: "flex", alignItems: "center", gap: 11, marginBottom: 8 }}>
+              <div key={c.clipper_id} className="card" style={{ display: "flex", alignItems: "center", gap: 11, marginBottom: 8, opacity: c.is_active ? 1 : .55 }}>
                 <Avatar url={c.avatar_url} name={c.clipper_name} size={36} />
-                <div style={{ flex: 1, minWidth: 0, fontWeight: 700, fontSize: 14 }}>{c.clipper_name}</div>
-                <select value={c.setter_id || ""} onChange={(e) => assign(c.clipper_id, e.target.value)}
-                  style={{ background: "var(--bg2)", color: "var(--text)", border: "1px solid var(--line2)", borderRadius: 10, padding: "9px 10px", fontSize: 13, fontFamily: "inherit", maxWidth: 150 }}>
-                  <option value="">— aucun —</option>
-                  {setters.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>{c.clipper_name}{!c.is_active && <span style={{ fontSize: 9, fontWeight: 900, textTransform: "uppercase", color: "#FF6A45", marginLeft: 6 }}>désactivé</span>}</div>
+                </div>
+                {c.is_active ? (
+                  <>
+                    <select value={c.setter_id || ""} onChange={(e) => assign(c.clipper_id, e.target.value)}
+                      style={{ background: "var(--bg2)", color: "var(--text)", border: "1px solid var(--line2)", borderRadius: 10, padding: "9px 10px", fontSize: 13, fontFamily: "inherit", maxWidth: 130 }}>
+                      <option value="">— aucun —</option>
+                      {setters.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                    <button className="btn btn-gh" style={{ padding: "8px 9px", fontSize: 11 }} onClick={() => toggleActive(c.clipper_id, false, c.clipper_name)}>🚫</button>
+                  </>
+                ) : (
+                  <button className="btn btn-gh" style={{ padding: "8px 11px", fontSize: 12, color: "#35E6A1", borderColor: "rgba(53,230,161,.4)" }} onClick={() => toggleActive(c.clipper_id, true, c.clipper_name)}>Réactiver</button>
+                )}
               </div>
             ))}
         </>
@@ -290,8 +324,87 @@ export default function Setter({ isStaff, userName, userAvatar }: { isStaff: boo
       {add && <AddModal clippers={clippers} onClose={() => setAdd(false)} onDone={() => { setAdd(false); flash("Prospect ajouté ✨"); load(); }} />}
       {bulk && <BulkModal coldScript={coldScript} whatsappGroupUrl={whatsappGroupUrl} onClose={() => setBulk(false)} onDone={(n) => { setBulk(false); flash(n); load(); }} />}
       {edit && <EditModal p={edit} isStaff={isStaff} bookingUrl={bookingUrl} coldScript={coldScript} whatsappGroupUrl={whatsappGroupUrl} onClose={() => setEdit(null)} onDone={() => { setEdit(null); flash("Mis à jour ✓"); load(); }} />}
+      {detail && <SetterDetail s={detail} rows={detailRows} onOpenProspect={(p) => setEdit(p)} onToggleActive={() => { toggleActive(detail.setter_id, !detail.is_active, detail.name); setDetail(null); }} onClose={() => setDetail(null)} onSaved={flash} />}
       {toast && <div className="cw-toast">{toast}</div>}
     </>
+  );
+}
+
+function SetterDetail({ s, rows, onOpenProspect, onToggleActive, onClose, onSaved }: { s: SetterRow; rows: Prospect[]; onOpenProspect: (p: Prospect) => void; onToggleActive: () => void; onClose: () => void; onSaved: (m: string) => void }) {
+  const db = getSupabase();
+  const [note, setNote] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    (async () => {
+      const { data } = await db.from("profiles").select("coach_note").eq("id", s.setter_id).single();
+      setNote((data as { coach_note?: string } | null)?.coach_note || "");
+      setLoaded(true);
+    })();
+  }, [db, s.setter_id]);
+  async function saveNote() {
+    setBusy(true);
+    await db.rpc("set_coach_note", { p_setter: s.setter_id, p_note: note });
+    setBusy(false); onSaved("Commentaire envoyé au setter 💬");
+  }
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 210, background: "rgba(6,5,12,.82)", backdropFilter: "blur(4px)", overflowY: "auto" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 560, margin: "0 auto", minHeight: "100%", background: "var(--bg)", padding: "16px 14px 40px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 11, marginBottom: 14 }}>
+          <button className="btn btn-gh" style={{ padding: "6px 12px" }} onClick={onClose}>← Retour</button>
+          <Avatar url={s.avatar_url} name={s.name} size={40} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="display" style={{ fontSize: 18, fontStyle: "italic" }}>{s.name}</div>
+            <div style={{ fontSize: 11, color: "var(--mut)", fontWeight: 700 }}>{s.clippers} clippers · {s.contacted} contacts</div>
+          </div>
+          <div className="gold" style={{ fontWeight: 800, fontStyle: "italic" }}>{euro(s.ca)}</div>
+        </div>
+
+        <div className="stats">
+          <div className="stat"><div className="v">{pct(s.taux_reponse)}</div><div className="l">taux rép.</div></div>
+          <div className="stat" style={{ borderColor: "rgba(53,230,161,.3)" }}><div className="v" style={{ color: "#35E6A1" }}>{pct(s.show_up)}</div><div className="l">show-up</div></div>
+          <div className="stat"><div className="v">{s.rdv_booked}</div><div className="l">rdv</div></div>
+          <div className="stat" style={{ borderColor: "rgba(245,196,81,.3)" }}><div className="v gold">{s.vendus}</div><div className="l">vendus</div></div>
+        </div>
+
+        <div className="sec-h" style={{ marginTop: 16 }}><h2>💬 Commentaire de coaching</h2></div>
+        <div className="card">
+          <textarea className="fld" value={note} onChange={(e) => setNote(e.target.value)} rows={3} placeholder={loaded ? "Ex : pense à relancer plus vite les leads chauds, ton script froid est trop long…" : "Chargement…"} style={{ width: "100%" }} />
+          <div style={{ fontSize: 11, color: "var(--mut)", margin: "2px 0 8px" }}>Le setter verra ce message en haut de son écran.</div>
+          <button className="btn btn-pri" style={{ width: "100%", padding: 11 }} disabled={busy} onClick={saveNote}>{busy ? "…" : "Envoyer au setter"}</button>
+        </div>
+
+        <div className="sec-h" style={{ marginTop: 16 }}><h2>Toute son activité ({rows.length})</h2></div>
+        {rows.length === 0 ? <div className="card"><div className="empty">Aucun prospect pour ce setter.</div></div>
+          : rows.map((p) => {
+            const st = stageOf(p.stage); const src = srcOf(p.source);
+            return (
+              <div key={p.id} className="card press" onClick={() => onOpenProspect(p)} style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 8, cursor: "pointer" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                  <span style={{ fontSize: 11 }}>{src.e}</span>
+                  <span style={{ fontWeight: 800, fontSize: 14 }}>@{p.handle}</span>
+                  {p.qualified === "oui" && <span style={{ fontSize: 11 }}>✓</span>}
+                  <span style={{ fontSize: 9, fontWeight: 900, fontStyle: "italic", textTransform: "uppercase", letterSpacing: .5, padding: "3px 8px", borderRadius: 6, color: st.v === "whatsapp" ? "#fff" : "#0a0610", background: st.c }}>{st.l}</span>
+                  {p.relance_count > 0 && <span style={{ fontSize: 10, color: "var(--mut)" }}>🔄{p.relance_count}</span>}
+                  <span style={{ marginLeft: "auto", color: "var(--mut)", fontSize: 13 }}>il y a {agoLabel(p.last_activity_at)}</span>
+                </div>
+                <div style={{ fontSize: 12, color: "var(--mut)" }}>
+                  {p.source === "inbound" ? (p.clipper_name ? <>clip <b style={{ color: "var(--coral)" }}>{p.clipper_name}</b></> : "origine ?") : <i>{src.l.toLowerCase()}</i>}
+                  {p.platform ? <> · {p.platform}</> : ""}{p.budget ? <> · 💰{p.budget}</> : ""}
+                  {p.interet ? <> · {p.interet}</> : (p.need ? <> · {p.need}</> : "")}
+                  {p.stage === "vendu" && p.sale_amount ? <> · <b style={{ color: "var(--text)" }}>{euro(p.sale_amount)}</b></> : ""}
+                  {p.stage === "perdu" && p.lost_reason ? <> · ✕ {p.lost_reason}</> : ""}
+                </div>
+                {p.note && <div style={{ fontSize: 12, color: "var(--text)", background: "var(--bg2)", borderRadius: 8, padding: "6px 9px", marginTop: 2 }}>📝 {p.note}</div>}
+              </div>
+            );
+          })}
+
+        <button className="btn btn-gh" style={{ width: "100%", marginTop: 18, padding: 12, color: s.is_active ? "#FF6A45" : "#35E6A1", borderColor: s.is_active ? "rgba(255,106,69,.4)" : "rgba(53,230,161,.4)" }} onClick={onToggleActive}>
+          {s.is_active ? "🚫 Désactiver ce setter" : "Réactiver ce setter"}
+        </button>
+      </div>
+    </div>
   );
 }
 
