@@ -529,6 +529,8 @@ function SettingsScreen({ actions }: { actions: AdmActions }) {
   const [waGroup, setWaGroup] = useState("");
   const [coldScript, setColdScript] = useState("");
   const [commission, setCommission] = useState("");
+  const [inviteLink, setInviteLink] = useState("");
+  const [inviteBusy, setInviteBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
 
@@ -611,6 +613,25 @@ function SettingsScreen({ actions }: { actions: AdmActions }) {
           <input value={commission} onChange={(e) => setCommission(e.target.value)} inputMode="decimal" placeholder="0" />
           <div style={{ fontSize: 11.5, color: "var(--mut)", marginTop: 4 }}>Sert au cockpit pour calculer la commission de chaque setter. Mets 0 tant que ce n&apos;est pas défini avec Keyan.</div>
         </div>
+      </div>
+
+      <div className="sec-h"><h2>Inviter un setter</h2></div>
+      <div className="card">
+        <div style={{ fontSize: 12.5, color: "var(--mut)", marginBottom: 10 }}>Génère un lien : la personne s&apos;inscrit via ce lien et devient <b>directement setter</b> (elle remplit ensuite sa fiche). Plus besoin de passer par Supabase.</div>
+        <button className="btn btn-pri" style={{ width: "100%", padding: 12 }} disabled={inviteBusy} onClick={async () => {
+          setInviteBusy(true);
+          const { data } = await getSupabase().rpc("create_invite", { p_role: "setter" });
+          setInviteBusy(false);
+          if (data) setInviteLink(`${window.location.origin}/app?invite=${data}`);
+        }}>{inviteBusy ? "…" : "🔗 Générer un lien d'invitation"}</button>
+        {inviteLink && (
+          <div style={{ marginTop: 10 }}>
+            <div className="fld" style={{ wordBreak: "break-all", fontSize: 12, color: "var(--text)" }}>{inviteLink}</div>
+            <button className="btn btn-gh" style={{ width: "100%", marginTop: 6, padding: 10 }} onClick={async () => {
+              try { await navigator.clipboard.writeText(inviteLink); alert("Lien copié 📋"); } catch { alert(inviteLink); }
+            }}>📋 Copier le lien</button>
+          </div>
+        )}
       </div>
 
       <div className="sec-h"><h2>Emails</h2></div>

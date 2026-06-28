@@ -7,6 +7,7 @@ import Admin, { AdmActions } from "./Admin";
 import Setter from "./Setter";
 import Login, { SetNewPassword } from "./Login";
 import Onboarding from "./Onboarding";
+import SetterOnboarding from "./SetterOnboarding";
 import SubmitSheet, { SubmitPrefill } from "./SubmitSheet";
 import { getSupabase } from "@/lib/supabase/client";
 import { platLabel, MyClip } from "@/lib/data";
@@ -17,7 +18,7 @@ import { linkReferral } from "@/lib/referral";
 
 type Role = "clip" | "adm" | "set";
 type NavLink = { id: string; label: string; icon: string };
-type Profile = { display_name: string | null; role: string; rank: string | null; onboarded?: boolean; avatar_url?: string | null };
+type Profile = { display_name: string | null; role: string; rank: string | null; onboarded?: boolean; setter_onboarded?: boolean; avatar_url?: string | null };
 
 export default function AppShell() {
   // ── auth ──
@@ -80,13 +81,37 @@ export default function AppShell() {
     if (!session) { setProfile(null); return; }
     getSupabase()
       .from("profiles")
-      .select("display_name, role, rank, onboarded, avatar_url")
+      .select("display_name, role, rank, onboarded, setter_onboarded, avatar_url")
       .eq("id", session.user.id)
       .maybeSingle()
       .then(({ data }) => setProfile((data as Profile) ?? { display_name: null, role: "clipper", rank: null, onboarded: false }));
   }, [session]);
 
   useEffect(() => { loadProfile(); }, [loadProfile]);
+
+  // utilise un lien d'invitation setter (?invite=TOKEN) une fois connecté
+  const inviteDoneRef = React.useRef(false);
+  useEffect(() => {
+    if (inviteDoneRef.current || !session || !profile) return;
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("invite");
+    if (!token) return;
+    if (profile.role === "clipper") {
+      inviteDoneRef.current = true;
+      getSupabase().rpc("redeem_invite", { p_token: token }).then(() => {
+        params.delete("invite");
+        const q = params.toString();
+        window.history.replaceState({}, "", window.location.pathname + (q ? "?" + q : ""));
+        loadProfile();
+      });
+    } else {
+      // déjà setter/admin : on nettoie juste l'URL
+      inviteDoneRef.current = true;
+      params.delete("invite");
+      const q = params.toString();
+      window.history.replaceState({}, "", window.location.pathname + (q ? "?" + q : ""));
+    }
+  }, [session, profile, loadProfile]);
 
   const isStaff = profile?.role === "admin" || profile?.role === "owner";
 
@@ -272,6 +297,9 @@ export default function AppShell() {
   }
   if (!profile.onboarded && !isStaff && profile.role !== "setter") {
     return <Onboarding userId={session.user.id} email={session.user.email ?? ""} initialName={profile.display_name} onDone={loadProfile} />;
+  }
+  if (profile.role === "setter" && !profile.setter_onboarded && !isStaff) {
+    return <SetterOnboarding userId={session.user.id} initialName={profile.display_name} onDone={loadProfile} />;
   }
 
   // ── app connectée ──
