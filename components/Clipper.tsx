@@ -55,6 +55,7 @@ function MineRow({ c, onClick }: { c: MyClip; onClick: () => void }) {
 
 /* ====================== ACCUEIL ====================== */
 function Home({ clips, name, place, arena, actions }: { clips: MyClip[]; name: string; place: number; arena: Arena; actions: ClipActions }) {
+  const [decl, setDecl] = useState(false);
   const dueViews = clips.reduce((s, c) => s + (c.due || 0), 0);
   const gain = clips.reduce((s, c) => s + (c.gain || 0), 0);
   const vues7 = clips.reduce((s, c) => s + Math.max(0, c.d7), 0);
@@ -81,6 +82,15 @@ function Home({ clips, name, place, arena, actions }: { clips: MyClip[]; name: s
       <div style={{ position: "relative", marginBottom: 12 }}>
         <KeyanBanner src="/keyan-cash.jpg" height={130} caption="Transforme tes vues en cash 💸" />
         <span className="sticker" style={{ position: "absolute", top: 10, right: 10 }}>NO RISK NO STORY</span>
+      </div>
+
+      <div className="card press" onClick={() => setDecl(true)} style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer", background: "linear-gradient(150deg,rgba(255,106,69,.12),rgba(245,196,81,.05)),var(--surf)", borderColor: "rgba(255,106,69,.25)", marginBottom: 12 }}>
+        <div style={{ fontSize: 22 }}>🔥</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 800, fontStyle: "italic", fontSize: 14 }}>J&apos;ai un prospect chaud</div>
+          <div style={{ fontSize: 12, color: "var(--mut)" }}>Quelqu&apos;un d&apos;intéressé en DM ? Déclare-le, ton setter le récupère.</div>
+        </div>
+        <span style={{ color: "var(--coral)", fontWeight: 800 }}>→</span>
       </div>
       <div className="tip" onClick={() => actions.go(tip.go)} style={{ cursor: "pointer" }}>
         <div className="tip-ic">{tip.ic}</div>
@@ -143,13 +153,41 @@ function Home({ clips, name, place, arena, actions }: { clips: MyClip[]; name: s
       </div>
 
       <div className="sec-h"><h2>Classement</h2><span className="more" onClick={() => actions.go("classement")}>Voir tout</span></div>
-      <div className="card" style={{ display: "flex", alignItems: "center", gap: 13, cursor: "pointer" }} onClick={() => actions.go("classement")}>
-        <div className="thumb" style={{ background: "var(--grad-coral)", color: "#0a0610" }}>{place ? "#" + place : "—"}</div>
-        <div style={{ flex: 1 }}><div style={{ fontWeight: 600, fontSize: 14 }}>{place ? `Tu es ${place}ᵉ cette semaine` : "Pas encore classé"}</div>
-          <div style={{ fontSize: 12, color: "var(--mut)" }}>{fmt(vues7)} vues nettes · monte dans le classement</div></div>
-        <Icon name="trophy" />
+      <div className="card press" style={{ display: "flex", alignItems: "center", gap: 14, cursor: "pointer", background: place ? "linear-gradient(150deg,rgba(245,196,81,.10),rgba(255,106,69,.05)),rgba(22,17,38,.6)" : undefined }} onClick={() => actions.go("classement")}>
+        <div className="podium"><i /><i /><i /></div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 800, fontStyle: "italic", fontSize: 15 }}>{place ? `#${place} cette semaine` : "Pas encore classé"}</div>
+          <div style={{ fontSize: 12, color: "var(--mut)", marginTop: 2 }}>{place ? `${fmt(vues7)} vues nettes · 7 j` : "Poste un clip pour entrer dans la course"}</div>
+        </div>
+        <span style={{ color: "var(--coral)", fontSize: 18, fontWeight: 800 }}>→</span>
       </div>
+      {decl && <DeclareModal onClose={() => setDecl(false)} onDone={() => { setDecl(false); actions.showToast("Prospect transmis à ton setter ✨"); }} />}
     </>
+  );
+}
+
+function DeclareModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const [handle, setHandle] = useState("");
+  const [need, setNeed] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function save() {
+    if (!handle.trim()) return;
+    setBusy(true);
+    await getSupabase().rpc("add_prospect", { p_handle: handle, p_clipper: null, p_need: need });
+    setBusy(false); onDone();
+  }
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(6,5,12,.7)", backdropFilter: "blur(4px)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 460, background: "var(--surf)", border: "1px solid var(--line2)", borderRadius: "20px 20px 0 0", padding: 18 }}>
+        <h3 style={{ margin: "0 0 4px", fontStyle: "italic" }}>Déclarer un prospect chaud 🔥</h3>
+        <div style={{ fontSize: 12, color: "var(--mut)", marginBottom: 14 }}>Ton setter prend le relais pour le convertir.</div>
+        <label className="fld-l">Son pseudo Instagram</label>
+        <input className="fld" value={handle} onChange={(e) => setHandle(e.target.value)} placeholder="@marco_b" autoFocus />
+        <label className="fld-l">Ce qu&apos;il veut (optionnel)</label>
+        <input className="fld" value={need} onChange={(e) => setNeed(e.target.value)} placeholder="lancer un business…" />
+        <button className="btn btn-pri" style={{ width: "100%", marginTop: 14, padding: 13 }} disabled={busy || !handle.trim()} onClick={save}>{busy ? "…" : "Transmettre 🚀"}</button>
+      </div>
+    </div>
   );
 }
 

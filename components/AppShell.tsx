@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { Icon } from "./ui";
 import Clipper, { ClipActions } from "./Clipper";
 import Admin, { AdmActions } from "./Admin";
+import Setter from "./Setter";
 import Login, { SetNewPassword } from "./Login";
 import Onboarding from "./Onboarding";
 import SubmitSheet, { SubmitPrefill } from "./SubmitSheet";
@@ -14,7 +15,7 @@ import { useArena } from "@/lib/arena";
 import { useNotifications, agoShort, notifEmoji } from "@/lib/notifications";
 import { linkReferral } from "@/lib/referral";
 
-type Role = "clip" | "adm";
+type Role = "clip" | "adm" | "set";
 type NavLink = { id: string; label: string; icon: string };
 type Profile = { display_name: string | null; role: string; rank: string | null; onboarded?: boolean; avatar_url?: string | null };
 
@@ -92,8 +93,8 @@ export default function AppShell() {
   // l'espace par défaut suit le rôle réel
   useEffect(() => {
     if (!profile) return;
-    setRole(isStaff ? "adm" : "clip");
-    setTab(isStaff ? "dash" : "home");
+    setRole(isStaff ? "adm" : profile?.role === "setter" ? "set" : "clip");
+    setTab(isStaff ? "dash" : profile?.role === "setter" ? "pipeline" : "home");
     setCamp(null);
   }, [profile?.role]);
 
@@ -141,7 +142,7 @@ export default function AppShell() {
   function go(t: string) { setTab(t); setCamp(null); setAdmClipper(null); setPayClipper(null); setClipDetail(null); window.scrollTo(0, 0); }
   function openCamp(id: string) { setTab("camp"); setCamp(id); window.scrollTo(0, 0); }
   function openClip(id: string) { setTab("clips"); setClipDetail(id); window.scrollTo(0, 0); }
-  function previewRole(r: Role) { setRole(r); setTab(r === "adm" ? "dash" : "home"); setCamp(null); window.scrollTo(0, 0); }
+  function previewRole(r: Role) { setRole(r); setTab(r === "adm" ? "dash" : r === "set" ? "pipeline" : "home"); setCamp(null); window.scrollTo(0, 0); }
   async function logout() { await getSupabase().auth.signOut(); }
   const closeSheet = () => setSheet(null);
 
@@ -278,7 +279,9 @@ export default function AppShell() {
   const admActions: AdmActions = { go, openImport, openClipper, openNewChallenge, openNewCampaign, openEditCampaign, openPayVerify, showToast };
   const adm = role === "adm";
 
-  const navLinks: NavLink[] = adm
+  const navLinks: NavLink[] = role === "set"
+    ? [{ id: "pipeline", label: "Conversations", icon: "user" }]
+    : adm
     ? [
         { id: "dash", label: "Dashboard", icon: "home" },
         { id: "clippers", label: "Clippers", icon: "user" },
@@ -299,11 +302,12 @@ export default function AppShell() {
         { id: "profil", label: "Profil", icon: "user" },
       ];
   const MENU_ITEM: NavLink = { id: "_menu", label: "Plus", icon: "grid" };
-  const mobileLinks: NavLink[] = adm
-    ? [navLinks[0], navLinks[1], navLinks[2], MENU_ITEM]
+  const mobileLinks: NavLink[] = role === "set"
+    ? [navLinks[0], MENU_ITEM]
     : [navLinks[0], navLinks[1], navLinks[2], MENU_ITEM];
-  const fabLabel = adm ? "Créer" : "Soumettre un clip";
-  const fabAction = adm ? () => openCreate() : () => openSubmit();
+  const isSet = role === "set";
+  const fabLabel = adm ? "Créer" : isSet ? "Ajouter un prospect" : "Soumettre un clip";
+  const fabAction = adm ? () => openCreate() : isSet ? () => window.dispatchEvent(new Event("cw-add-prospect")) : () => openSubmit();
 
   // menu mobile : toutes les sections (celles qui ne tiennent pas dans la barre du bas)
   function openSections() {
@@ -328,6 +332,7 @@ export default function AppShell() {
     <div className="role">
       <button className={role === "clip" ? "on" : ""} onClick={() => previewRole("clip")}>Vue clipper</button>
       <button className={role === "adm" ? "on adm" : ""} onClick={() => previewRole("adm")}>Vue admin</button>
+      <button className={role === "set" ? "on" : ""} onClick={() => previewRole("set")}>Vue setter</button>
     </div>
   );
 
@@ -365,7 +370,9 @@ export default function AppShell() {
           </button>
           <button className="logout" onClick={logout}>Quitter</button>
         </div>
-        {role === "clip"
+        {role === "set"
+          ? <Setter isStaff={isStaff} userName={profile.display_name || session.user.email} userAvatar={profile.avatar_url} />
+          : role === "clip"
           ? <Clipper tab={tab} camp={camp} clipDetail={clipDetail} clips={clips} catalog={catalog} arena={arena} userName={profile.display_name || session.user.email} userEmail={session.user.email} userId={session.user.id} userAvatar={profile.avatar_url} reloadProfile={loadProfile} actions={clipActions} />
           : <Admin tab={tab} actions={admActions} catalog={catalog} arena={arena} isOwner={profile?.role === "owner"} userName={profile.display_name || session.user.email} userAvatar={profile.avatar_url} clipperId={admClipper} payClipper={payClipper} />}
       </div>
