@@ -155,8 +155,9 @@ export default function AppShell() {
       const st = (r.status === "rejected" ? "hold" : r.status);
       const due = st === "track" ? Math.max(0, cur - paid) : 0;
       const gain = (due / 1000) * rate;
+      const eligible = gain >= 1; // min 1 € par vidéo pour être payable
       const ago = r.submitted_at ? Math.floor((Date.now() - new Date(r.submitted_at).getTime()) / 864e5) : 0;
-      return { id: r.id, asset: a?.title || "(contenu original)", plat: platLabel[r.platform] || r.platform, vues: cur, d7: net, st, url: r.url, ago, rate, paid, due, gain };
+      return { id: r.id, asset: a?.title || "(contenu original)", plat: platLabel[r.platform] || r.platform, vues: cur, d7: net, st, url: r.url, ago, rate, paid, due, gain, eligible };
     });
     setClips(mapped);
   }, [session]);
