@@ -18,7 +18,7 @@ export type MyClip = {
   id: string; asset: string; plat: string;
   vues: number; d7: number; st: ClipStatus;
   url?: string; ago?: number;
-  rate?: number; paid?: number; due?: number; gain?: number;
+  rate?: number; paid?: number; due?: number; gain?: number; eligible?: boolean;
 };
 export type Challenge = { t: string; sub: string; prog: number; reward: string; c: "" | "c2" };
 export type Clipper = { n: string; rk: string; vues: number; gain: number; clips: number };
