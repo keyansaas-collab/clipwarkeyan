@@ -270,7 +270,7 @@ export default function AppShell() {
       </div>
     );
   }
-  if (!profile.onboarded && !isStaff) {
+  if (!profile.onboarded && !isStaff && profile.role !== "setter") {
     return <Onboarding userId={session.user.id} email={session.user.email ?? ""} initialName={profile.display_name} onDone={loadProfile} />;
   }
 
