@@ -46,7 +46,11 @@ function MineRow({ c, onClick }: { c: MyClip; onClick: () => void }) {
       <div className="thumb" style={{ background: "var(--surf2)", color: "var(--mut)" }}>{c.plat[0]}</div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div className="t" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.asset}</div>
-        <div className="s">{c.plat} · {agoTxt(c.ago)} <span className={"pill " + pill[0]} style={{ marginLeft: 4 }}>{pill[1]}</span></div>
+        <div className="s">{c.plat} · {agoTxt(c.ago)} <span className={"pill " + pill[0]} style={{ marginLeft: 4 }}>{pill[1]}</span>
+          {c.st === "track" && (c.due || 0) > 0 && !c.eligible && (
+            <span style={{ marginLeft: 6, fontSize: 10, color: "var(--amber)", fontWeight: 700 }}>· éligible à 1000 vues</span>
+          )}
+        </div>
       </div>
       <div className="end"><div className="vue">{fmt(c.vues)}</div><div className={"delta " + dcl(c.d7)}>{dtx(c.d7)} · 7 j</div></div>
     </div>
@@ -56,8 +60,8 @@ function MineRow({ c, onClick }: { c: MyClip; onClick: () => void }) {
 /* ====================== ACCUEIL ====================== */
 function Home({ clips, name, place, arena, actions }: { clips: MyClip[]; name: string; place: number; arena: Arena; actions: ClipActions }) {
   const [decl, setDecl] = useState(false);
-  const dueViews = clips.reduce((s, c) => s + (c.due || 0), 0);
-  const gain = clips.reduce((s, c) => s + (c.gain || 0), 0);
+  const dueViews = clips.reduce((s, c) => s + (c.eligible ? (c.due || 0) : 0), 0);
+  const gain = clips.reduce((s, c) => s + (c.eligible ? (c.gain || 0) : 0), 0);
   const vues7 = clips.reduce((s, c) => s + Math.max(0, c.d7), 0);
   const total = clips.reduce((s, c) => s + c.vues, 0);
   const r = rankInfo(total);
@@ -324,8 +328,8 @@ function ClipDetail({ clip, actions }: { clip: MyClip; actions: ClipActions }) {
 type PayRow = { id: string; amount: number; net_views: number; created_at: string };
 function Bilan({ clips, actions }: { clips: MyClip[]; actions: ClipActions }) {
   const { payWindowDays: win } = useSettings();
-  const dueViews = clips.reduce((s, c) => s + (c.due || 0), 0);
-  const gain = clips.reduce((s, c) => s + (c.gain || 0), 0);
+  const dueViews = clips.reduce((s, c) => s + (c.eligible ? (c.due || 0) : 0), 0);
+  const gain = clips.reduce((s, c) => s + (c.eligible ? (c.gain || 0) : 0), 0);
   const [pending, setPending] = useState<{ amount: number; created_at: string } | null>(null);
   const [busyReq, setBusyReq] = useState(false);
   const [busyRef, setBusyRef] = useState(false);
