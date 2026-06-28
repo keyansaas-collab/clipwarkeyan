@@ -503,6 +503,55 @@ function BulkModal({ coldScript, whatsappGroupUrl, onClose, onDone }: { coldScri
   );
 }
 
+function ConversationLog({ prospectId }: { prospectId: number }) {
+  const db = getSupabase();
+  type Msg = { id: number; direction: string; body: string; author_name: string | null; created_at: string };
+  const [msgs, setMsgs] = useState<Msg[]>([]);
+  const [body, setBody] = useState("");
+  const [dir, setDir] = useState<"out" | "in" | "note">("out");
+  const [busy, setBusy] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const reload = React.useCallback(async () => {
+    const { data } = await db.rpc("list_messages", { p_prospect: prospectId });
+    setMsgs((data as Msg[]) || []); setLoaded(true);
+  }, [db, prospectId]);
+  useEffect(() => { reload(); }, [reload]);
+  async function send() {
+    if (!body.trim()) return;
+    setBusy(true);
+    await db.rpc("add_message", { p_prospect: prospectId, p_direction: dir, p_body: body });
+    setBody(""); setBusy(false); reload();
+  }
+  const stylesFor = (d: string) =>
+    d === "out" ? { alignSelf: "flex-end", background: "linear-gradient(120deg,#8B6CFF,#6a4fd0)", color: "#fff" }
+    : d === "in" ? { alignSelf: "flex-start", background: "var(--bg2)", color: "var(--text)" }
+    : { alignSelf: "center", background: "transparent", color: "var(--mut)", fontStyle: "italic", fontSize: 11.5, border: "1px dashed var(--line2)" };
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <label className="fld-l">Conversation</label>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 230, overflowY: "auto", padding: "4px 2px 8px" }}>
+        {!loaded ? <div style={{ fontSize: 12, color: "var(--mut)" }}>…</div>
+          : msgs.length === 0 ? <div style={{ fontSize: 12, color: "var(--mut)" }}>Aucun échange noté. Garde une trace de ce qui se dit 👇</div>
+            : msgs.map((m) => (
+              <div key={m.id} style={{ maxWidth: "82%", padding: "7px 11px", borderRadius: 13, fontSize: 13, whiteSpace: "pre-wrap", ...stylesFor(m.direction) }}>
+                {m.direction === "note" ? "📝 " : ""}{m.body}
+                <div style={{ fontSize: 9, opacity: .6, marginTop: 3 }}>{new Date(m.created_at).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</div>
+              </div>
+            ))}
+      </div>
+      <div className="role" style={{ margin: "4px 0" }}>
+        <button className={dir === "out" ? "on" : ""} onClick={() => setDir("out")}>Moi →</button>
+        <button className={dir === "in" ? "on" : ""} onClick={() => setDir("in")}>← Lui</button>
+        <button className={dir === "note" ? "on" : ""} onClick={() => setDir("note")}>📝 Note</button>
+      </div>
+      <div style={{ display: "flex", gap: 7 }}>
+        <input className="fld" style={{ flex: 1, marginBottom: 0 }} value={body} onChange={(e) => setBody(e.target.value)} placeholder={dir === "in" ? "Ce qu'il a répondu…" : dir === "note" ? "Note interne…" : "Ce que tu as envoyé…"} onKeyDown={(e) => { if (e.key === "Enter") send(); }} />
+        <button className="btn btn-pri" style={{ padding: "0 16px" }} disabled={busy || !body.trim()} onClick={send}>↑</button>
+      </div>
+    </div>
+  );
+}
+
 function EditModal({ p, isStaff, bookingUrl, coldScript, whatsappGroupUrl, onClose, onDone }: { p: Prospect; isStaff: boolean; bookingUrl: string; coldScript: string; whatsappGroupUrl: string; onClose: () => void; onDone: () => void }) {
   const db = getSupabase();
   const [stage, setStage] = useState(p.stage);
@@ -569,6 +618,8 @@ function EditModal({ p, isStaff, bookingUrl, coldScript, whatsappGroupUrl, onClo
         <button className="btn" style={{ width: "100%", marginBottom: 10, padding: 12, background: "linear-gradient(120deg,#8B6CFF,#2DE2E6)", color: "#0a0610", fontWeight: 800 }} disabled={busy} onClick={bookRdv}>📅 Caler le RDV (ouvre l&apos;agenda)</button>
       )}
       <button className="btn btn-gh" style={{ width: "100%", marginBottom: 14, padding: 10, fontSize: 13 }} disabled={busy} onClick={relance}>🔄 J&apos;ai relancé (+1)</button>
+
+      <ConversationLog prospectId={p.id} />
 
       <label className="fld-l">Stade</label>
       <select className="fld" value={stage} onChange={(e) => setStage(e.target.value)}>
