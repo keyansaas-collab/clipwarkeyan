@@ -525,12 +525,13 @@ function SettingsScreen({ actions }: { actions: AdmActions }) {
   const [cap, setCap] = useState("");
   const [win, setWin] = useState("");
   const [emailOn, setEmailOn] = useState(true);
+  const [booking, setBooking] = useState("");
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     if (s.raw && !ready) {
-      setDrive(s.driveUrl); setBonus(String(s.refBonus)); setMilestone(String(s.refMilestone)); setCap(String(s.viewCap)); setWin(String(s.payWindowDays)); setEmailOn(s.emailEnabled); setReady(true);
+      setDrive(s.driveUrl); setBonus(String(s.refBonus)); setMilestone(String(s.refMilestone)); setCap(String(s.viewCap)); setWin(String(s.payWindowDays)); setEmailOn(s.emailEnabled); setBooking(s.bookingUrl); setReady(true);
     }
   }, [s.raw, ready]);
 
@@ -542,6 +543,7 @@ function SettingsScreen({ actions }: { actions: AdmActions }) {
       setSetting("ref_milestone", String(parseInt(milestone.replace(/\s/g, ""), 10) || 10000)),
       setSetting("view_cap", String(parseInt(cap.replace(/\s/g, ""), 10) || 100000)),
       setSetting("pay_window_days", String(Math.max(0, parseInt(win, 10) || 0))),
+      setSetting("booking_url", booking.trim()),
       setSetting("email_enabled", emailOn ? "1" : "0"),
     ]);
     await s.reload();
@@ -578,6 +580,14 @@ function SettingsScreen({ actions }: { actions: AdmActions }) {
         <div className="field"><label>Fenêtre de paiement (jours après le post)</label>
           <input value={win} onChange={(e) => setWin(e.target.value)} inputMode="numeric" placeholder="7" />
           <div style={{ fontSize: 11.5, color: "var(--mut)", marginTop: 4 }}>Une vidéo rapporte pendant ce nombre de jours après sa publication, puis son compteur payable se fige. Mets <b>0</b> pour aucune limite. Les vidéos postées pendant un challenge sont exemptées.</div>
+        </div>
+      </div>
+
+      <div className="sec-h"><h2>Prise de RDV (setters)</h2></div>
+      <div className="card">
+        <div className="field"><label>Lien de réservation du closer (Calendly ou Cal.com)</label>
+          <input value={booking} onChange={(e) => setBooking(e.target.value)} placeholder="https://calendly.com/keyan/appel" />
+          <div style={{ fontSize: 11.5, color: "var(--mut)", marginTop: 4 }}>C&apos;est le lien que le bouton « Caler le RDV » ouvrira dans la fiche prospect. Idéalement <b>un seul agenda</b> (celui du closer) pour que tous les RDV arrivent au même endroit.</div>
         </div>
       </div>
 

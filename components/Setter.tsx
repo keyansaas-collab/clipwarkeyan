@@ -1,6 +1,7 @@
 "use client";
 import React, { useEffect, useState, useCallback } from "react";
 import { getSupabase } from "@/lib/supabase/client";
+import { useSettings } from "@/lib/settings";
 import { Avatar } from "./ui";
 
 type Prospect = {
@@ -34,6 +35,7 @@ function agoLabel(iso: string) {
 
 export default function Setter({ isStaff, userName, userAvatar }: { isStaff: boolean; userName: string; userAvatar?: string | null }) {
   const db = getSupabase();
+  const { bookingUrl } = useSettings();
   const [view, setView] = useState<"pipe" | "setters" | "pods">("pipe");
   const [rows, setRows] = useState<Prospect[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
@@ -187,7 +189,7 @@ export default function Setter({ isStaff, userName, userAvatar }: { isStaff: boo
       )}
 
       {add && <AddModal clippers={clippers} onClose={() => setAdd(false)} onDone={() => { setAdd(false); flash("Prospect ajouté ✨"); load(); }} />}
-      {edit && <EditModal p={edit} isStaff={isStaff} onClose={() => setEdit(null)} onDone={() => { setEdit(null); flash("Mis à jour ✓"); load(); }} />}
+      {edit && <EditModal p={edit} isStaff={isStaff} bookingUrl={bookingUrl} onClose={() => setEdit(null)} onDone={() => { setEdit(null); flash("Mis à jour ✓"); load(); }} />}
       {toast && <div className="cw-toast">{toast}</div>}
     </>
   );
@@ -233,7 +235,7 @@ function AddModal({ clippers, onClose, onDone }: { clippers: Opt[]; onClose: () 
   );
 }
 
-function EditModal({ p, isStaff, onClose, onDone }: { p: Prospect; isStaff: boolean; onClose: () => void; onDone: () => void }) {
+function EditModal({ p, isStaff, bookingUrl, onClose, onDone }: { p: Prospect; isStaff: boolean; bookingUrl: string; onClose: () => void; onDone: () => void }) {
   const db = getSupabase();
   const [stage, setStage] = useState(p.stage);
   const [need, setNeed] = useState(p.need || "");
@@ -248,10 +250,22 @@ function EditModal({ p, isStaff, onClose, onDone }: { p: Prospect; isStaff: bool
     });
     setBusy(false); onDone();
   }
+  async function bookRdv() {
+    if (!bookingUrl) { alert("Ajoute le lien de prise de RDV dans Réglages (Vue admin)."); return; }
+    const sep = bookingUrl.includes("?") ? "&" : "?";
+    const url = `${bookingUrl}${sep}name=${encodeURIComponent("@" + p.handle)}`;
+    window.open(url, "_blank");
+    setBusy(true);
+    await db.rpc("update_prospect", { p_id: p.id, p_stage: "rdv_pris" });
+    setBusy(false); onDone();
+  }
   return (
     <Backdrop onClose={onClose}>
       <h3 style={{ margin: "0 0 4px", fontStyle: "italic" }}>@{p.handle}</h3>
       <div style={{ fontSize: 12, color: "var(--mut)", marginBottom: 14 }}>{p.clipper_name ? `clip ${p.clipper_name}` : "origine inconnue"}</div>
+
+      <button className="btn" style={{ width: "100%", marginBottom: 14, padding: 12, background: "linear-gradient(120deg,#8B6CFF,#2DE2E6)", color: "#0a0610", fontWeight: 800 }} disabled={busy} onClick={bookRdv}>📅 Caler le RDV (ouvre l&apos;agenda)</button>
+
       <label className="fld-l">Stade</label>
       <select className="fld" value={stage} onChange={(e) => setStage(e.target.value)}>
         {STAGES.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}
