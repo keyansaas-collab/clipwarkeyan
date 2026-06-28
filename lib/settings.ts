@@ -24,6 +24,7 @@ export type Settings = {
   refMilestone: number;
   viewCap: number;
   payWindowDays: number;
+  bookingUrl: string;
   emailEnabled: boolean;
   raw: Record<string, string> | null;
   reload: () => Promise<void>;
@@ -43,6 +44,7 @@ export function useSettings(): Settings {
     refMilestone: Number(get("ref_milestone", String(REF_MILESTONE))) || REF_MILESTONE,
     viewCap: Number(get("view_cap", "100000")) || 100000,
     payWindowDays: Number(get("pay_window_days", "7")),
+    bookingUrl: get("booking_url", ""),
     emailEnabled: get("email_enabled", "1") === "1",
     raw: map,
     reload: async () => { await load(true); setMap({ ...(_cache || {}) }); },
