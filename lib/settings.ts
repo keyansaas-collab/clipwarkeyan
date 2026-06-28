@@ -25,6 +25,9 @@ export type Settings = {
   viewCap: number;
   payWindowDays: number;
   bookingUrl: string;
+  whatsappGroupUrl: string;
+  coldScript: string;
+  commissionPct: number;
   emailEnabled: boolean;
   raw: Record<string, string> | null;
   reload: () => Promise<void>;
@@ -45,6 +48,9 @@ export function useSettings(): Settings {
     viewCap: Number(get("view_cap", "100000")) || 100000,
     payWindowDays: Number(get("pay_window_days", "7")),
     bookingUrl: get("booking_url", ""),
+    whatsappGroupUrl: get("whatsapp_group_url", ""),
+    coldScript: get("cold_script", "Hello ! Je vois qu'on partage le même délire business 🚀 Je t'ajoute dans un groupe privé où on partage des méthodes concrètes pour lancer/scaler. Ça te dit ?"),
+    commissionPct: Number(get("commission_pct", "0")),
     emailEnabled: get("email_enabled", "1") === "1",
     raw: map,
     reload: async () => { await load(true); setMap({ ...(_cache || {}) }); },
