@@ -94,7 +94,7 @@ export default function Onboarding({
           {err && <div className="auth-err">{err}</div>}
         </div>
 
-        <div className="auth-note">Connectée en tant que {email}.</div>
+        <div className="auth-note">Connectée en tant que {email}. · <span style={{ textDecoration: "underline", cursor: "pointer" }} onClick={() => getSupabase().auth.signOut()}>Se déconnecter</span></div>
       </div>
     </div>
   );
