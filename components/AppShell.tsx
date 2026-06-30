@@ -91,25 +91,31 @@ export default function AppShell() {
 
   // utilise un lien d'invitation setter (?invite=TOKEN) une fois connecté
   const inviteDoneRef = React.useRef(false);
+  const [inviteState, setInviteState] = useState<"none" | "working" | "failed">(
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).has("invite") ? "working" : "none"
+  );
   useEffect(() => {
     if (inviteDoneRef.current || !session || !profile) return;
     const params = new URLSearchParams(window.location.search);
     const token = params.get("invite");
     if (!token) return;
-    if (profile.role === "clipper") {
-      inviteDoneRef.current = true;
-      getSupabase().rpc("redeem_invite", { p_token: token }).then(() => {
-        params.delete("invite");
-        const q = params.toString();
-        window.history.replaceState({}, "", window.location.pathname + (q ? "?" + q : ""));
-        loadProfile();
-      });
-    } else {
-      // déjà setter/admin : on nettoie juste l'URL
-      inviteDoneRef.current = true;
+    const cleanUrl = () => {
       params.delete("invite");
       const q = params.toString();
       window.history.replaceState({}, "", window.location.pathname + (q ? "?" + q : ""));
+    };
+    if (profile.role === "clipper") {
+      inviteDoneRef.current = true;
+      getSupabase().rpc("redeem_invite", { p_token: token }).then(({ data, error }) => {
+        cleanUrl();
+        if (error || data !== "setter") { setInviteState("failed"); return; }
+        setInviteState("none");
+        loadProfile();
+      });
+    } else {
+      inviteDoneRef.current = true;
+      setInviteState("none");
+      cleanUrl();
     }
   }, [session, profile, loadProfile]);
 
@@ -303,6 +309,28 @@ export default function AppShell() {
           <img className="logo-img big" src="/clipwar-logo.png" alt="ClipWar" style={{ margin: "0 auto" }} />
           <h2 style={{ marginTop: 16, fontStyle: "italic" }}>Compte désactivé</h2>
           <div className="auth-sub" style={{ marginTop: 8 }}>Ton accès a été suspendu. Contacte l&apos;équipe si tu penses que c&apos;est une erreur.</div>
+          <button className="btn btn-gh" style={{ marginTop: 18, padding: 12 }} onClick={() => getSupabase().auth.signOut()}>Se déconnecter</button>
+        </div>
+      </div>
+    );
+  }
+  if (inviteState === "working" && profile.role === "clipper" && !isStaff) {
+    return (
+      <div className="shell">
+        <div className="auth-wrap" style={{ textAlign: "center" }}>
+          <img className="logo-img big" src="/clipwar-logo.png" alt="ClipWar" style={{ margin: "0 auto" }} />
+          <div className="auth-sub" style={{ marginTop: 14 }}>Activation de ton accès setter…</div>
+        </div>
+      </div>
+    );
+  }
+  if (inviteState === "failed" && profile.role === "clipper" && !isStaff) {
+    return (
+      <div className="shell">
+        <div className="auth-wrap" style={{ textAlign: "center" }}>
+          <img className="logo-img big" src="/clipwar-logo.png" alt="ClipWar" style={{ margin: "0 auto" }} />
+          <h2 style={{ marginTop: 16, fontStyle: "italic" }}>Lien d&apos;invitation invalide</h2>
+          <div className="auth-sub" style={{ marginTop: 8 }}>Ce lien a expiré ou n&apos;est plus actif. Demande un nouveau lien à l&apos;équipe.</div>
           <button className="btn btn-gh" style={{ marginTop: 18, padding: 12 }} onClick={() => getSupabase().auth.signOut()}>Se déconnecter</button>
         </div>
       </div>
