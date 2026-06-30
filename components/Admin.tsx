@@ -617,19 +617,24 @@ function SettingsScreen({ actions }: { actions: AdmActions }) {
 
       <div className="sec-h"><h2>Inviter un setter</h2></div>
       <div className="card">
-        <div style={{ fontSize: 12.5, color: "var(--mut)", marginBottom: 10 }}>Génère un lien : la personne s&apos;inscrit via ce lien et devient <b>directement setter</b> (elle remplit ensuite sa fiche). Plus besoin de passer par Supabase.</div>
+        <div style={{ fontSize: 12.5, color: "var(--mut)", marginBottom: 10 }}>Génère un code. La personne s&apos;inscrit, saisit ce code (ou ouvre le lien) et devient <b>directement setter</b>. Elle remplit ensuite sa fiche.</div>
         <button className="btn btn-pri" style={{ width: "100%", padding: 12 }} disabled={inviteBusy} onClick={async () => {
           setInviteBusy(true);
           const { data } = await getSupabase().rpc("create_invite", { p_role: "setter" });
           setInviteBusy(false);
-          if (data) setInviteLink(`${window.location.origin}/app?invite=${data}`);
-        }}>{inviteBusy ? "…" : "🔗 Générer un lien d'invitation"}</button>
+          if (data) setInviteLink(String(data));
+        }}>{inviteBusy ? "…" : "🔑 Générer un code setter"}</button>
         {inviteLink && (
-          <div style={{ marginTop: 10 }}>
-            <div className="fld" style={{ wordBreak: "break-all", fontSize: 12, color: "var(--text)" }}>{inviteLink}</div>
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 11, color: "var(--mut)", textTransform: "uppercase", letterSpacing: 1, fontWeight: 700, marginBottom: 4 }}>Code à transmettre</div>
+            <div className="fld" style={{ fontSize: 22, fontWeight: 800, fontStyle: "italic", letterSpacing: 3, textAlign: "center", color: "var(--mint)" }}>{inviteLink}</div>
             <button className="btn btn-gh" style={{ width: "100%", marginTop: 6, padding: 10 }} onClick={async () => {
-              try { await navigator.clipboard.writeText(inviteLink); alert("Lien copié 📋"); } catch { alert(inviteLink); }
-            }}>📋 Copier le lien</button>
+              try { await navigator.clipboard.writeText(inviteLink); alert("Code copié 📋"); } catch { alert(inviteLink); }
+            }}>📋 Copier le code</button>
+            <button className="btn btn-gh" style={{ width: "100%", marginTop: 6, padding: 10, fontSize: 12 }} onClick={async () => {
+              const link = `${window.location.origin}/app?invite=${inviteLink}`;
+              try { await navigator.clipboard.writeText(link); alert("Lien copié 📋"); } catch { alert(link); }
+            }}>🔗 Copier plutôt le lien (pré-remplit le code)</button>
           </div>
         )}
       </div>
