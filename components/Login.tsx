@@ -10,9 +10,29 @@ export default function Login() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [pwd, setPwd] = useState("");
+  const [code, setCode] = useState("");
+  const [codeOk, setCodeOk] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+
+  // pré-remplit le code depuis un lien ?invite=CODE et bascule en inscription
+  React.useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("invite");
+    if (t) { setCode(t); setMode("signup"); }
+  }, []);
+
+  // valide le code (setter) à la volée
+  React.useEffect(() => {
+    const c = code.trim();
+    if (!c) { setCodeOk(null); return; }
+    let alive = true;
+    const id = setTimeout(async () => {
+      const { data } = await getSupabase().rpc("check_invite", { p_token: c });
+      if (alive) setCodeOk(Boolean(data));
+    }, 350);
+    return () => { alive = false; clearTimeout(id); };
+  }, [code]);
 
   function reset(m: Mode) { setMode(m); setErr(null); setInfo(null); }
 
@@ -33,7 +53,7 @@ export default function Login() {
     const { data, error } = await getSupabase().auth.signUp({
       email: email.trim(),
       password: pwd,
-      options: { data: { display_name: name.trim() }, emailRedirectTo: window.location.origin + "/app" },
+      options: { data: { display_name: name.trim(), invite_token: code.trim() || null }, emailRedirectTo: window.location.origin + "/app" },
     });
     setBusy(false);
     if (error) {
@@ -98,6 +118,16 @@ export default function Login() {
 
           <button className="btn btn-pri" style={{ marginTop: 16, padding: 13 }} onClick={submit} disabled={busy}>{cta}</button>
 
+          {mode === "signup" && (
+            <div className="field" style={{ marginTop: 14 }}>
+              <label>Code setter (optionnel)</label>
+              <input placeholder="Ex. A3F9K2 — laisse vide si tu es clipper" value={code}
+                onChange={(e) => setCode(e.target.value.toUpperCase())} style={codeOk === true ? { borderColor: "var(--mint)" } : codeOk === false ? { borderColor: "var(--coral)" } : undefined} />
+              {codeOk === true && <div style={{ fontSize: 11.5, color: "var(--mint)", marginTop: 4, fontWeight: 700 }}>✓ Code valide — tu rejoins l&apos;équipe en tant que setter</div>}
+              {codeOk === false && <div style={{ fontSize: 11.5, color: "var(--coral)", marginTop: 4 }}>Code inconnu ou expiré. Laisse vide pour rejoindre en clipper.</div>}
+            </div>
+          )}
+
           {mode === "login" && (
             <div style={{ textAlign: "center", marginTop: 12, fontSize: 12.5 }}>
               <span style={{ color: "var(--cyan)", cursor: "pointer" }} onClick={() => reset("forgot")}>Mot de passe oublié ?</span>
@@ -117,7 +147,7 @@ export default function Login() {
         </div>
 
         <div className="auth-note">
-          Un nouveau compte est créé en tant que clipper. Les accès admin sont attribués par le propriétaire.
+          Sans code, ton compte est créé en tant que clipper. Les setters reçoivent un code de l&apos;équipe.
         </div>
       </div>
     </div>
