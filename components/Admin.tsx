@@ -252,7 +252,7 @@ function Dash({ data, catalog, isOwner, actions }: { data: AdminData; catalog: C
       <RefreshViewsButton actions={actions} />
       <div className="adm-kpis">
         <div className="adm-kpi"><div className="v gr">{data.dash.vues_7 >= 1e6 ? (Math.round(data.dash.vues_7 / 1e5) / 10) + "M" : <CountUp value={data.dash.vues_7} />}</div><div className="l">vues nettes · 7 j</div></div>
-        <div className="adm-kpi"><div className="v gold"><CountUp value={data.dash.a_verser} format={euro} /></div><div className="l">dû en attente</div></div>
+        <div className="adm-kpi" style={{ cursor: "pointer" }} onClick={() => actions.go("pay")}><div className="v gold"><CountUp value={data.dash.a_verser} format={euro} /></div><div className="l">dû en attente ›</div></div>
         <div className="adm-kpi"><div className="v"><CountUp value={data.dash.clippers_actifs} /></div><div className="l">clippers actifs</div></div>
         <div className="adm-kpi"><div className="v"><CountUp value={data.dash.pubs_7} /></div><div className="l">pubs · 7 j</div></div>
       </div>
@@ -314,6 +314,44 @@ function Clippers({ data, actions }: { data: AdminData; actions: AdmActions }) {
 }
 
 /* ───────────── CLIPPER (fiche détaillée) ───────────── */
+function ClipperWeekly({ clipperId }: { clipperId: string }) {
+  type Wk = { week_start: string; views_gained: number; paid_amount: number; paid_views: number };
+  const [rows, setRows] = useState<Wk[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  React.useEffect(() => {
+    let alive = true;
+    getSupabase().rpc("clipper_weekly", { p_clipper: clipperId }).then(({ data }) => {
+      if (alive) { setRows((data as Wk[]) || []); setLoaded(true); }
+    });
+    return () => { alive = false; };
+  }, [clipperId]);
+  const fmtWeek = (d: string) => {
+    const start = new Date(d); const end = new Date(start); end.setDate(end.getDate() + 6);
+    const o: Intl.DateTimeFormatOptions = { day: "2-digit", month: "short" };
+    return `${start.toLocaleDateString("fr-FR", o)} → ${end.toLocaleDateString("fr-FR", o)}`;
+  };
+  return (
+    <>
+      <div className="sec-h"><h2>Historique hebdomadaire</h2></div>
+      <div className="card">
+        {!loaded ? <div className="empty">Chargement…</div>
+          : rows.length ? rows.map((w) => (
+            <div className="row" key={w.week_start}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="t" style={{ fontSize: 13.5 }}>Sem. {fmtWeek(w.week_start)}</div>
+                <div className="s">{fmt(w.views_gained)} vues gagnées{w.paid_views ? ` · ${fmt(w.paid_views)} payées` : ""}</div>
+              </div>
+              <div className="end">
+                <div className="vue mono" style={{ color: w.paid_amount > 0 ? "var(--mint)" : "var(--mut2)" }}>{euro(w.paid_amount)}</div>
+                <div className="delta flat">{w.paid_amount > 0 ? "versé" : "—"}</div>
+              </div>
+            </div>
+          )) : <div className="empty">Pas encore d&apos;historique pour ce clipper.</div>}
+      </div>
+    </>
+  );
+}
+
 function ClipperDetail({ c, data, actions }: { c: AdmClipper; data: AdminData; actions: AdmActions }) {
   const his = data.clips.filter((k) => k.clipper_id === c.id);
   const pubs = pubsLast7(his.map((k) => k.submitted_at));
@@ -356,6 +394,8 @@ function ClipperDetail({ c, data, actions }: { c: AdmClipper; data: AdminData; a
         {his.length ? [...his].sort((a, b) => new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime()).map((k) => <ClipRowLink key={k.id} c={k} />)
           : <div className="empty">Aucun clip soumis.</div>}
       </div>
+
+      <ClipperWeekly clipperId={c.id} />
 
       <div className="sec-h"><h2>Paiement</h2></div>
       <div className="card" style={{ display: "flex", alignItems: "center", gap: 12 }}>
