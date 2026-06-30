@@ -68,6 +68,7 @@ export default function SetterOnboarding({ userId, initialName, onDone }: { user
 
       {err && <div style={{ color: "var(--coral)", fontSize: 13, marginTop: 8 }}>{err}</div>}
       <button className="btn btn-pri" style={{ width: "100%", marginTop: 18, padding: 14, fontSize: 15 }} disabled={busy} onClick={submit}>{busy ? "…" : "C'est parti 🚀"}</button>
+      <button className="btn btn-gh" style={{ width: "100%", marginTop: 10, padding: 11, fontSize: 13 }} onClick={() => getSupabase().auth.signOut()}>Se déconnecter</button>
     </div>
   );
 }
