@@ -3,1134 +3,721 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { getSupabase } from "@/lib/supabase/client";
 
 /* ═══════════════════════════════════════════════════════════════
-   SetWar · console setter complète — parcours A→Z
-   Branché sur les RPC ClipWar existantes.
-   Migration additive optionnelle : supabase/24_setwar_rdv.sql
-     (setwar_book_rdv → écrit rdv_at, setwar_mark_paid → payment_received_at)
-   L'app fonctionne SANS la migration (le RDV avance le stage,
-   la date est juste stockée en plus si la fonction existe).
+   KeyanDash · cockpit du closer/boss
+   Vue équipe (6 setters comparés + 6 KPIs) → rapport individuel.
+   Branché sur les RPC admin_* existantes.
+   CAC/LTV/FECC : calculés à partir d'une saisie manuelle (budget pub,
+   panier moyen, durée client) stockée en localStorage — pas de SQL requis.
 ═══════════════════════════════════════════════════════════════ */
 
+type SetterRow = {
+  setter_id: string; name: string; avatar_url: string | null; clippers: number;
+  contacted: number; replied: number; taux_reponse: number | null; rdv_booked: number;
+  rdv_honored: number; show_up: number | null; vendus: number; ca: number; avg_h: number | null; is_active: boolean;
+};
+type Overview = {
+  contacted: number; replied: number; taux_reponse: number | null; rdv_booked: number;
+  rdv_honored: number; show_up: number | null; qualifies: number; non_qualifies: number; vendus: number;
+  ca: number; commission_base: number; avg_h: number | null; perdus: number;
+};
+type Funnel = { stage: string; n: number };
+type Extra = { pipeline_days: number; acts_per_day: number };
 type Prospect = {
-  id: number;
-  handle: string;
-  clipper_id: string | null;
-  clipper_name: string | null;
-  need: string | null;
-  stage: string;
-  source: string;
-  note: string | null;
-  rdv_at: string | null;
-  sale_amount: number | null;
-  platform: string | null;
-  budget: string | null;
-  interet: string | null;
-  qualified: string | null;
-  lost_reason: string | null;
-  relance_count: number;
-  last_activity_at: string;
-  stale: boolean;
+  id: number; handle: string; stage: string; source: string; interet: string | null;
+  need: string | null; rdv_at: string | null; sale_amount: number | null; relance_count: number; last_activity_at: string;
 };
 
-type Bucket = "nouveau" | "relancer" | "confirmer" | "silence";
-type Screen = "today" | "fiche" | "focus" | "stats" | "vivier" | "profil";
+const euro = (n: number) => new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(n || 0);
+const pct = (n: number | null | undefined) => (n == null ? "—" : Math.round(n) + "%");
+const initial = (s: string) => (s || "?").charAt(0).toUpperCase();
 
-const ALL_STAGES: { v: string; l: string }[] = [
-  { v: "nouveau", l: "Nouveau" },
-  { v: "contacte", l: "Contacté" },
-  { v: "repondu", l: "A répondu" },
-  { v: "en_convo", l: "En convo" },
-  { v: "whatsapp", l: "WhatsApp" },
-  { v: "pret_appel", l: "Prêt appel" },
-  { v: "rdv_pris", l: "RDV pris" },
-  { v: "rdv_honore", l: "RDV honoré" },
-  { v: "vendu", l: "Vendu" },
-  { v: "perdu", l: "Perdu" },
-];
-const stageLabel = (v: string) => ALL_STAGES.find((s) => s.v === v)?.l || v;
+const FUNNEL_ORDER = ["contacte", "repondu", "en_convo", "pret_appel", "rdv_pris", "rdv_honore", "vendu"];
+const FUNNEL_LABEL: Record<string, string> = {
+  contacte: "Contactés", repondu: "Répondu", en_convo: "En convo", pret_appel: "Prêt appel",
+  rdv_pris: "RDV pris", rdv_honore: "RDV honorés", vendu: "Vendus",
+};
 
-const RELANCE_STAGES = ["en_convo", "repondu", "pret_appel", "whatsapp", "contacte", "froid"];
-const DONE_STAGES = ["vendu", "perdu", "rdv_honore"];
-
-function endOfTomorrow(): number {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  d.setHours(23, 59, 59, 999);
-  return d.getTime();
-}
-
-function bucketOf(p: Prospect): Bucket | null {
-  if (DONE_STAGES.includes(p.stage)) return null;
-  if (p.stage === "nouveau") return "nouveau";
-  if (p.stage === "rdv_pris") {
-    if (!p.rdv_at) return "confirmer";
-    const t = new Date(p.rdv_at).getTime();
-    if (t <= endOfTomorrow()) return "confirmer";
-    return null;
-  }
-  if (RELANCE_STAGES.includes(p.stage)) return p.stale ? "silence" : "relancer";
-  return "relancer";
-}
-
-function parseHandle(raw: string): { handle: string; platform: string | null } | null {
-  let s = raw.trim();
-  if (!s) return null;
-  let platform: string | null = null;
+/* paramètres business pour CAC/LTV (saisie manuelle, persistée localement) */
+type BizParams = { adSpend: number; avgTicket: number; clientMonths: number };
+const DEFAULT_BIZ: BizParams = { adSpend: 0, avgTicket: 0, clientMonths: 1 };
+function loadBiz(): BizParams {
   try {
-    if (/https?:\/\//i.test(s) || /(instagram\.com|tiktok\.com)/i.test(s)) {
-      if (/instagram\.com/i.test(s)) platform = "Instagram";
-      if (/tiktok\.com/i.test(s)) platform = "TikTok";
-      const m = s.match(/(?:instagram\.com|tiktok\.com)\/@?([A-Za-z0-9._]+)/i);
-      if (m) s = m[1];
-    }
-  } catch {
-    /* noop */
-  }
-  s = s.replace(/^@/, "").replace(/\/.*$/, "").trim();
-  if (!/^[A-Za-z0-9._]{1,40}$/.test(s)) return null;
-  return { handle: s, platform };
+    const raw = typeof window !== "undefined" ? window.localStorage.getItem("keyan_biz") : null;
+    return raw ? { ...DEFAULT_BIZ, ...JSON.parse(raw) } : DEFAULT_BIZ;
+  } catch { return DEFAULT_BIZ; }
 }
 
-const CHEERS = ["Noté", "Une de moins", "Réglé", "Ça avance", "Solide"];
-
-const SECTIONS: { key: Bucket; label: string; head: string }[] = [
-  { key: "nouveau", label: "Nouveaux", head: "À contacter maintenant" },
-  { key: "relancer", label: "À relancer", head: "À relancer" },
-  { key: "confirmer", label: "Confirmer", head: "RDV à confirmer" },
-  { key: "silence", label: "Silence", head: "Silence radio" },
-];
-
-const initialOf = (h: string) => (h || "?").charAt(0).toUpperCase();
-const avaCls = (b: Bucket | null) => (b === "nouveau" ? "hot" : b === "confirmer" ? "blue" : "");
-
-export default function SetWar({ userName }: { userName?: string }) {
+export default function KeyanDash({ userName }: { userName?: string }) {
   const db = getSupabase();
-  const [rows, setRows] = useState<Prospect[]>([]);
+  const [setters, setSetters] = useState<SetterRow[]>([]);
+  const [overview, setOverview] = useState<Overview | null>(null);
+  const [funnel, setFunnel] = useState<Funnel[]>([]);
+  const [extra, setExtra] = useState<Extra | null>(null);
   const [loading, setLoading] = useState(true);
-  const [screen, setScreen] = useState<Screen>("today");
-  const [current, setCurrent] = useState<Prospect | null>(null);
-  const [addOpen, setAddOpen] = useState(false);
-  const [cheer, setCheer] = useState<string | null>(null);
-  const [doneToday, setDoneToday] = useState(0);
-  const [filter, setFilter] = useState<"all" | Bucket>("all");
-  const [stats, setStats] = useState<any>(null);
+  const [sel, setSel] = useState<SetterRow | null>(null);
+  const [biz, setBiz] = useState<BizParams>(DEFAULT_BIZ);
+  const [bizOpen, setBizOpen] = useState(false);
+  const [days, setDays] = useState(7);
+  const [report, setReport] = useState<any>(null);
+  const [inviteOpen, setInviteOpen] = useState(false);
+
+  useEffect(() => { setBiz(loadBiz()); }, []);
+
+  // rapport period-aware (Daily/7/15/30) — rechargé quand la période change
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const { data } = await db.rpc("keyan_report", { p_days: days });
+        if (alive) setReport(data || null);
+      } catch {
+        if (alive) setReport(null);
+      }
+    })();
+    return () => { alive = false; };
+  }, [db, days]);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [p, s] = await Promise.all([db.rpc("setter_prospects"), db.rpc("setter_stats")]);
-    setRows((p.data as Prospect[]) || []);
-    setStats(s.data || null);
+    const [s, o, f, x] = await Promise.all([
+      db.rpc("admin_setters"),
+      db.rpc("admin_overview", { p_setter: null }),
+      db.rpc("admin_funnel", { p_setter: null }),
+      db.rpc("admin_extra_kpis"),
+    ]);
+    setSetters(((s.data as SetterRow[]) || []).sort((a, b) => b.vendus - a.vendus || b.rdv_booked - a.rdv_booked));
+    setOverview((o.data as Overview) || null);
+    setFunnel((f.data as Funnel[]) || []);
+    const ex = Array.isArray(x.data) ? (x.data as any[])[0] : (x.data as any);
+    setExtra(ex || null);
     setLoading(false);
   }, [db]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useEffect(() => { load(); }, [load]);
 
-  const flash = (m: string) => {
-    setCheer(m);
-    window.clearTimeout((flash as any)._t);
-    (flash as any)._t = window.setTimeout(() => setCheer(null), 1000);
-  };
-
-  const buckets = useMemo(() => {
-    const b: Record<Bucket, Prospect[]> = { nouveau: [], relancer: [], confirmer: [], silence: [] };
-    for (const p of rows) {
-      const k = bucketOf(p);
-      if (k) b[k].push(p);
-    }
-    return b;
-  }, [rows]);
-
-  const total = buckets.nouveau.length + buckets.relancer.length + buckets.confirmer.length + buckets.silence.length;
-  const dayTotal = total + doneToday;
-  const ratio = dayTotal === 0 ? 0 : doneToday / dayTotal;
-  const first = (userName || "toi").split(/\s|@/)[0] || "toi";
-  const today = new Date().toLocaleDateString("fr-FR", { weekday: "short", day: "numeric" });
-
-  async function act(p: Prospect, kind: Bucket) {
-    try {
-      if (kind === "nouveau") await db.rpc("update_prospect", { p_id: p.id, p_stage: "en_convo" });
-      else if (kind === "confirmer") await db.rpc("update_prospect", { p_id: p.id, p_stage: "rdv_pris" });
-      else await db.rpc("bump_relance", { p_id: p.id });
-      setRows((prev) => prev.filter((x) => x.id !== p.id));
-      setDoneToday((n) => n + 1);
-      flash(CHEERS[Math.floor(Math.random() * CHEERS.length)]);
-    } catch {
-      flash("Erreur — réessaie");
-    }
+  function saveBiz(b: BizParams) {
+    setBiz(b);
+    try { window.localStorage.setItem("keyan_biz", JSON.stringify(b)); } catch { /* noop */ }
   }
 
-  function openFiche(p: Prospect) {
-    setCurrent(p);
-    setScreen("fiche");
-    window.scrollTo(0, 0);
+  // les 6 KPIs équipe
+  const kpis = useMemo(() => {
+    const o = overview;
+    const contacted = o?.contacted || 0;
+    const rdv = o?.rdv_booked || 0;
+    const honored = o?.rdv_honored || 0;
+    const vendus = o?.vendus || 0;
+    const ca = o?.ca || 0;
+    const booking = contacted ? (rdv / contacted) * 100 : null;
+    const showup = o?.show_up ?? (rdv ? (honored / rdv) * 100 : null);
+    const closing = honored ? (vendus / honored) * 100 : null;
+    const cac = vendus && biz.adSpend ? biz.adSpend / vendus : null;
+    const ltv = biz.avgTicket ? biz.avgTicket * biz.clientMonths : null;
+    // FECC : First-Est Client Cost / ratio d'efficacité = LTV / CAC (santé de l'acquisition)
+    const fecc = cac && ltv ? ltv / cac : null;
+    return { booking, showup, closing, cac, ltv, fecc, ca, vendus, rdv, contacted };
+  }, [overview, biz]);
+
+  if (sel) {
+    return <SetterReport setter={sel} biz={biz} onBack={() => setSel(null)} />;
   }
 
-  const visibleSections = SECTIONS.filter((s) => (filter === "all" || filter === s.key) && buckets[s.key].length > 0);
-  const focusList = useMemo(
-    () => [...buckets.nouveau, ...buckets.relancer, ...buckets.confirmer].slice(0, 8),
-    [buckets]
-  );
+  const first = (userName || "Keyan").split(/\s|@/)[0];
 
   return (
-    <div className="sw-root">
-      <SetWarStyle />
-
-      {/* ─────────── AUJOURD'HUI ─────────── */}
-      {screen === "today" && (
-        <div className="sw-screen">
-          <header className="sw-head">
-            <div className="sw-top">
-              <div className="sw-mark">Set<b>War</b></div>
-              <div className="sw-date">{today}</div>
+    <div className="kd-root">
+      <KeyanStyle />
+      <div className="kd-wrap">
+        <header className="kd-head">
+          <div className="kd-htop">
+            <div className="kd-mark">Keyan<b>OS</b> · pilotage</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="kd-cfg" onClick={() => setInviteOpen(true)}>＋ Inviter un setter</button>
+              <button className="kd-cfg" onClick={() => setBizOpen(true)}>⚙︎ Paramètres</button>
             </div>
-            <div className="sw-hello">Salut {first}.</div>
-            <div className="sw-sub">
-              {loading ? "on charge ta journée…" : total === 0 ? "tout est traité pour aujourd'hui." : (
-                <><b>{total} lead{total > 1 ? "s" : ""}</b> {total > 1 ? "t'attendent" : "t'attend"} aujourd'hui.</>
-              )}
-            </div>
-            <div className="sw-prog">
-              <div className="sw-bar"><i style={{ width: `${Math.round(ratio * 100)}%` }} /></div>
-              <div className="sw-plbl"><span><b>{doneToday}</b> traités</span><span>{total} restants</span></div>
-            </div>
-          </header>
-
-          {!loading && total > 0 && (
-            <div className="sw-brief">
-              <h3>🎯 Ton brief du jour</h3>
-              <p>
-                {buckets.nouveau.length > 0 && `${buckets.nouveau.length} nouveau${buckets.nouveau.length > 1 ? "x" : ""} à contacter vite`}
-                {buckets.nouveau.length > 0 && (buckets.relancer.length > 0 || buckets.confirmer.length > 0) && ", "}
-                {buckets.relancer.length > 0 && `${buckets.relancer.length} relance${buckets.relancer.length > 1 ? "s" : ""}`}
-                {buckets.relancer.length > 0 && buckets.confirmer.length > 0 && ", "}
-                {buckets.confirmer.length > 0 && `${buckets.confirmer.length} RDV à confirmer`}
-                . Attaque les nouveaux en premier.
-              </p>
-              <button className="sw-go" onClick={() => { setScreen("focus"); }}>Démarrer ma journée →</button>
-            </div>
-          )}
-
-          <div className="sw-fils">
-            <button className={"sw-fil" + (filter === "all" ? " on" : "")} onClick={() => setFilter("all")}>Tout</button>
-            {SECTIONS.map((s) => (
-              <button key={s.key} className={"sw-fil" + (filter === s.key ? " on" : "") + (buckets[s.key].length === 0 ? " zero" : "")}
-                onClick={() => setFilter(filter === s.key ? "all" : s.key)}>
-                {s.label}<span className="sw-cnt">{buckets[s.key].length}</span>
-              </button>
-            ))}
           </div>
+          <h1 className="kd-h1">Salut {first}.</h1>
+          <p className="kd-sub">{loading ? "chargement…" : `${setters.length} setters · vue d'ensemble de l'écosystème`}</p>
+        </header>
 
-          <div className="sw-list">
-            {loading && <div className="sw-loading">…</div>}
-            {!loading && total === 0 && (
-              <div className="sw-empty">
-                <div className="sw-emark">🏆</div>
-                <h3>Journée bouclée.</h3>
-                <p>Rien ne t'a filé entre les doigts. Ajoute des leads ou reviens demain.</p>
-              </div>
+        <GlobalReport report={report} days={days} setDays={setDays} biz={biz} />
+
+        <div className="kd-sect" style={{ paddingLeft: 4, marginTop: 8 }}>KPIs setters — détail équipe</div>
+        {/* 6 KPIs équipe */}
+        <div className="kd-kpigrid">
+          <Kpi label="Booking rate" value={pct(kpis.booking)} hint="RDV / contacts" tone="lime" />
+          <Kpi label="Show-up rate" value={pct(kpis.showup)} hint="honorés / RDV" tone="blue" />
+          <Kpi label="Closing rate" value={pct(kpis.closing)} hint="ventes / RDV honorés" tone="lime" />
+          <Kpi label="CAC" value={kpis.cac != null ? euro(kpis.cac) : "à régler"} hint="coût par acquisition" tone={kpis.cac != null ? "" : "muted"} onClick={() => setBizOpen(true)} />
+          <Kpi label="LTV" value={kpis.ltv != null ? euro(kpis.ltv) : "à régler"} hint="valeur par client" tone={kpis.ltv != null ? "" : "muted"} onClick={() => setBizOpen(true)} />
+          <Kpi label="LTV / CAC" value={kpis.fecc != null ? kpis.fecc.toFixed(1) + "×" : "à régler"} hint="santé acquisition" tone={kpis.fecc != null ? (kpis.fecc >= 3 ? "lime" : "hot") : "muted"} onClick={() => setBizOpen(true)} />
+        </div>
+
+        {/* KPIs secondaires — comportement */}
+        <div className="kd-sect" style={{ paddingLeft: 4 }}>Indicateurs de comportement</div>
+        <div className="kd-kpigrid kd-kpigrid2">
+          <Kpi label="Speed-to-lead" value={overview?.avg_h != null ? overview.avg_h + "h" : "—"} hint="délai moy. → RDV" tone="" />
+          <Kpi label="Taux de réponse" value={pct(overview?.taux_reponse)} hint="répondu / contacté" tone="" />
+          <Kpi label="Taux de qualif" value={overview ? pct(overview.qualifies + overview.non_qualifies ? (overview.qualifies / (overview.qualifies + overview.non_qualifies)) * 100 : null) : "—"} hint="qualifiés / en convo" tone="" />
+          <Kpi label="No-show" value={overview?.show_up != null ? pct(100 - overview.show_up) : "—"} hint="RDV manqués" tone={overview?.show_up != null && 100 - overview.show_up > 30 ? "hot" : ""} />
+          <Kpi label="Temps pipeline" value={extra?.pipeline_days != null ? extra.pipeline_days + "j" : "—"} hint="création → clôture" tone="" />
+          <Kpi label="Activité / jour" value={extra?.acts_per_day != null ? String(extra.acts_per_day) : "—"} hint="gestes / jour actif" tone="" />
+        </div>
+
+        <div className="kd-cols">
+          {/* classement setters */}
+          <div className="kd-col">
+            <div className="kd-sect">Tes {setters.length} setters</div>
+            {loading && <div className="kd-loading">…</div>}
+            {!loading && setters.length === 0 && (
+              <div className="kd-empty">Aucun setter. Invite-les via un code (voir SetWar).</div>
             )}
-            {!loading && visibleSections.map((s) => (
-              <React.Fragment key={s.key}>
-                <div className="sw-sect">{s.head}</div>
-                <div className="sw-cardgrid">
-                  {buckets[s.key].map((p) => (
-                    <ListRow key={p.id} p={p} bucket={s.key} onOpen={() => openFiche(p)} onAct={() => act(p, s.key)} />
-                  ))}
-                </div>
-              </React.Fragment>
-            ))}
+            {setters.map((s, i) => {
+              const booking = s.contacted ? Math.round((s.rdv_booked / s.contacted) * 100) : 0;
+              const closing = s.rdv_honored ? Math.round((s.vendus / s.rdv_honored) * 100) : 0;
+              return (
+                <button key={s.setter_id} className="kd-setter" onClick={() => setSel(s)} style={{ opacity: s.is_active ? 1 : 0.5 }}>
+                  <div className="kd-rank" data-top={i === 0 ? "1" : undefined}>{i + 1}</div>
+                  <div className="kd-ava">{initial(s.name)}</div>
+                  <div className="kd-sinfo">
+                    <div className="kd-sname">{s.name}{!s.is_active && <span className="kd-off">off</span>}</div>
+                    <div className="kd-smeta">{s.rdv_booked} RDV · {pct(s.show_up)} show-up · {closing}% closing</div>
+                  </div>
+                  <div className="kd-sright">
+                    <div className="kd-sca">{euro(s.ca)}</div>
+                    <div className="kd-svendus">{s.vendus} vente{s.vendus > 1 ? "s" : ""}</div>
+                  </div>
+                  <div className="kd-chev">›</div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* funnel équipe */}
+          <div className="kd-col">
+            <div className="kd-sect">Funnel de l'équipe</div>
+            <div className="kd-card">
+              {(() => {
+                const map: Record<string, number> = {};
+                funnel.forEach((f) => { map[f.stage] = f.n; });
+                const ord = FUNNEL_ORDER.map((k) => ({ k, n: map[k] || 0 }));
+                const max = Math.max(1, ...ord.map((o) => o.n));
+                return ord.map((o, idx) => {
+                  const prev = idx > 0 ? ord[idx - 1].n : o.n;
+                  const drop = prev > 0 ? Math.round((1 - o.n / prev) * 100) : 0;
+                  return (
+                    <div key={o.k} className="kd-fnl">
+                      <div className="kd-fnl-l">{FUNNEL_LABEL[o.k]}</div>
+                      <div className="kd-fnl-bar"><div style={{ width: `${Math.max(4, (o.n / max) * 100)}%` }} /></div>
+                      <div className="kd-fnl-n">{o.n}</div>
+                      {idx > 0 && drop > 0 && <div className="kd-fnl-drop">−{drop}%</div>}
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+            <div className="kd-sect">Total équipe</div>
+            <div className="kd-card kd-totals">
+              <div><b>{euro(kpis.ca)}</b><span>CA généré</span></div>
+              <div><b>{kpis.rdv}</b><span>RDV bookés</span></div>
+              <div><b>{kpis.vendus}</b><span>ventes</span></div>
+              <div><b>{kpis.contacted}</b><span>contacts</span></div>
+            </div>
           </div>
         </div>
-      )}
+      </div>
 
-      {/* ─────────── FICHE ─────────── */}
-      {screen === "fiche" && current && (
-        <Fiche
-          p={current}
-          onBack={() => { setScreen("today"); setCurrent(null); }}
-          onSaved={(msg) => { flash(msg); load(); }}
-        />
-      )}
-
-      {/* ─────────── FOCUS ─────────── */}
-      {screen === "focus" && (
-        <Focus
-          leads={focusList}
-          onExit={() => setScreen("today")}
-          onAct={async (p, kind) => { await act(p, kind); }}
-        />
-      )}
-
-      {/* ─────────── STATS ─────────── */}
-      {screen === "stats" && <Stats stats={stats} first={first} />}
-
-      {/* ─────────── VIVIER ─────────── */}
-      {screen === "vivier" && (
-        <Vivier
-          rows={rows}
-          onOpen={(p) => openFiche(p)}
-          onRelance={async (p) => { await db.rpc("bump_relance", { p_id: p.id }); flash("Relancé"); load(); }}
-        />
-      )}
-
-      {/* ─────────── PROFIL ─────────── */}
-      {screen === "profil" && <Profil first={first} userName={userName} stats={stats} rows={rows} onFlash={flash} />}
-
-      {/* ─────────── NAV ─────────── */}
-      {(screen === "today" || screen === "stats" || screen === "vivier" || screen === "profil") && (
-        <div className="sw-nav">
-          <button className={"sw-navit" + (screen === "today" ? " on" : "")} onClick={() => setScreen("today")}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 10.5L12 3l9 7.5V21H3z" /></svg>
-            Aujourd'hui
-          </button>
-          <button className={"sw-navit" + (screen === "vivier" ? " on" : "")} onClick={() => setScreen("vivier")}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18" /></svg>
-            Vivier
-          </button>
-          <button className="sw-navfab" onClick={() => setAddOpen(true)} aria-label="Ajouter">
-            <svg viewBox="0 0 24 24" fill="none" stroke="#0B0F04" strokeWidth="2.6" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
-          </button>
-          <button className={"sw-navit" + (screen === "stats" ? " on" : "")} onClick={() => setScreen("stats")}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3v18h18" /><path d="M7 14l4-4 3 3 4-5" /></svg>
-            Stats
-          </button>
-          <button className={"sw-navit" + (screen === "profil" ? " on" : "")} onClick={() => setScreen("profil")}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4 4-6 8-6s8 2 8 6" /></svg>
-            Profil
-          </button>
-        </div>
-      )}
-
-      {cheer && <div className="sw-toast">{cheer}</div>}
-
-      {addOpen && (
-        <AddSheet onClose={() => setAddOpen(false)} onDone={(m) => { setAddOpen(false); flash(m); load(); }} />
-      )}
+      {bizOpen && <BizSheet biz={biz} onClose={() => setBizOpen(false)} onSave={(b) => { saveBiz(b); setBizOpen(false); }} />}
+      {inviteOpen && <InviteSheet onClose={() => setInviteOpen(false)} />}
     </div>
   );
 }
 
-/* ═══════════ Liste : une ligne ═══════════ */
-function ListRow({ p, bucket, onOpen, onAct }: { p: Prospect; bucket: Bucket; onOpen: () => void; onAct: () => void }) {
-  const sub =
-    p.source === "inbound" ? (p.clipper_name ? `inbound · clip ${p.clipper_name}` : "inbound") :
-    p.source === "froid" ? "froid" : "chaud";
-  const body = p.interet || p.need || p.note;
-  const tag = { nouveau: "Nouveau", relancer: "Relance", confirmer: "Confirmer", silence: "Silence" }[bucket];
-  const when = {
-    nouveau: "⚡ Réponds vite — un lead frais convertit mieux",
-    relancer: "à relancer aujourd'hui",
-    confirmer: p.rdv_at ? `RDV ${new Date(p.rdv_at).toLocaleString("fr-FR", { weekday: "short", hour: "2-digit", minute: "2-digit" })} — confirme la veille` : "⏰ Confirme le RDV",
-    silence: "une dernière relance avant de lâcher ?",
-  }[bucket];
-  const whenCls = bucket === "nouveau" || bucket === "confirmer" ? "hot" : bucket === "silence" ? "calm" : "";
+function GlobalReport({ report, days, setDays, biz }: { report: any; days: number; setDays: (d: number) => void; biz: BizParams }) {
+  const cur = report?.current || {};
+  const prev = report?.previous || {};
+  const num = (v: any) => Number(v || 0);
+
+  const ca = num(cur.ca);
+  const paid = num(cur.paid);
+  const roi = paid > 0 ? ca / paid : null;
+  const prevCa = num(prev.ca), prevPaid = num(prev.paid);
+  const prevRoi = prevPaid > 0 ? prevCa / prevPaid : null;
+  const roiDelta = roi != null && prevRoi != null ? roi - prevRoi : null;
+  const caDelta = prevCa > 0 ? Math.round(((ca - prevCa) / prevCa) * 100) : null;
+  const paidDelta = prevPaid > 0 ? Math.round(((paid - prevPaid) / prevPaid) * 100) : null;
+
+  const fmtViews = (n: number) => n >= 1e6 ? (Math.round(n / 1e5) / 10) + "M" : n >= 1e3 ? (Math.round(n / 100) / 10) + "k" : String(n);
+  const fmtNum = (n: number) => new Intl.NumberFormat("fr-FR").format(n);
+
+  // funnel : acquisition (vues, leads) + setting/closing
+  const views = num(cur.views_gained);
+  const leads = num(cur.leads_in);
+  const contacted = num(cur.contacted);
+  const rdv = num(cur.rdv);
+  const honored = num(cur.honored);
+  const ventes = num(cur.ventes);
+  const fstages = [
+    { zone: "Acquisition", name: "Vues générées", val: views, disp: fmtViews(views), cls: "acq", base: views, conv: null },
+    { zone: "", name: "Leads inbound", val: leads, disp: fmtNum(leads), cls: "acq", base: views, conv: views ? (leads / views) * 100 : null },
+    { zone: "Setting", name: "Contactés", val: contacted, disp: fmtNum(contacted), cls: "set", base: Math.max(leads, contacted, 1), conv: leads ? (contacted / leads) * 100 : null },
+    { zone: "", name: "RDV pris", val: rdv, disp: fmtNum(rdv), cls: "set", base: Math.max(contacted, 1), conv: contacted ? (rdv / contacted) * 100 : null },
+    { zone: "", name: "RDV honorés", val: honored, disp: fmtNum(honored), cls: "set", base: Math.max(contacted, 1), conv: rdv ? (honored / rdv) * 100 : null },
+    { zone: "Closing", name: "Ventes", val: ventes, disp: fmtNum(ventes), cls: "clo", base: Math.max(contacted, 1), conv: honored ? (ventes / honored) * 100 : null },
+  ];
+  const maxBase = Math.max(1, views);
+
+  const periods = [{ d: 1, l: "Daily" }, { d: 7, l: "7j" }, { d: 15, l: "15j" }, { d: 30, l: "30j" }];
+  const ltv = biz.avgTicket ? biz.avgTicket * biz.clientMonths : null;
+  const cac = ventes && biz.adSpend ? biz.adSpend / ventes : (ventes && paid ? paid / ventes : null);
+  const ltvCac = ltv && cac ? ltv / cac : null;
 
   return (
-    <div className="sw-row" onClick={onOpen}>
-      <div className="sw-rtop">
-        <div className={"sw-ava " + avaCls(bucket)}>{initialOf(p.handle)}</div>
-        <div className="sw-rid">
-          <div className="sw-rname">@{p.handle}</div>
-          <div className="sw-rsub">{sub}{p.relance_count ? ` · ${p.relance_count} relance${p.relance_count > 1 ? "s" : ""}` : ""}</div>
+    <div className="kd-report">
+      <div className="kd-rtop">
+        <div className="kd-sect" style={{ padding: 0 }}>Vue d'ensemble</div>
+        <div className="kd-periods">
+          {periods.map((p) => (
+            <button key={p.d} className={days === p.d ? "on" : ""} onClick={() => setDays(p.d)}>{p.l}</button>
+          ))}
         </div>
-        <div className={"sw-rtag " + avaCls(bucket)}>{tag}</div>
-        <div className="sw-chev">›</div>
       </div>
-      {body && bucket === "relancer" && <div className="sw-rbody">« {body} »</div>}
-      <div className={"sw-rwhen " + whenCls}>{when}</div>
-      <button className={"sw-act" + (bucket === "confirmer" || bucket === "silence" ? " ghost" : "")}
-        onClick={(e) => { e.stopPropagation(); onAct(); }}>
-        {{ nouveau: "J'ai contacté", relancer: "J'ai relancé", confirmer: "RDV confirmé", silence: "J'ai relancé" }[bucket]}
-      </button>
+
+      {/* ROI hero */}
+      <div className="kd-hero">
+        <div className="kd-hero-roi">
+          <div className="l">ROI global — CA généré ÷ coût acquisition</div>
+          <div className="v">{roi != null ? roi.toFixed(1) : "—"}<small>×</small></div>
+          <div className="d">
+            {roiDelta != null ? `${roiDelta >= 0 ? "▲ +" : "▼ "}${roiDelta.toFixed(1)}× vs période précédente` : "période précédente indisponible"}
+            {roi != null && (roi >= 3 ? " · acquisition saine" : " · à surveiller")}
+          </div>
+        </div>
+        <div className="kd-hero-card">
+          <div className="l">CA généré (closing)</div>
+          <div className="v gold">{euro(ca)}</div>
+          {caDelta != null && <div className={"d " + (caDelta >= 0 ? "up" : "down")}>{caDelta >= 0 ? "▲ +" : "▼ "}{caDelta}%</div>}
+        </div>
+        <div className="kd-hero-card">
+          <div className="l">Coût acquisition (clippers)</div>
+          <div className="v">{euro(paid)}</div>
+          {paidDelta != null && <div className={"d " + (paidDelta >= 0 ? "down" : "up")}>{paidDelta >= 0 ? "▲ +" : "▼ "}{Math.abs(paidDelta)}% de dépense</div>}
+        </div>
+      </div>
+
+      {/* Funnel */}
+      <div className="kd-sect">Funnel complet <span className="kd-badge">du clip au cash</span></div>
+      <div className="kd-funnel">
+        {fstages.map((s, i) => (
+          <div key={i} className="kd-fstage">
+            <div className="kd-fzone">{s.zone}</div>
+            <div className="kd-fname">{s.name}</div>
+            <div className="kd-fbar"><div className={"b-" + s.cls} style={{ width: `${Math.max(4, (s.val / maxBase) * 100)}%` }}>{s.disp}</div></div>
+            <div className="kd-fnum">{s.disp}</div>
+            <div className={"kd-fconv" + (s.conv != null && s.conv < 25 && i > 0 ? " warn" : "")}>{s.conv != null ? Math.round(s.conv) + "%" : "—"}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* 3 pôles */}
+      <div className="kd-sect">Les 3 pôles</div>
+      <div className="kd-poles">
+        <div className="kd-pole">
+          <div className="kd-pole-h acq"><span className="kd-pole-dot" /><h3>Acquisition</h3><span className="kd-ptag">ClipWar</span></div>
+          <PRow k="Vues générées" v={fmtViews(views)} />
+          <PRow k="Clips publiés" v={fmtNum(num(cur.clips))} />
+          <PRow k="Clippers actifs" v={fmtNum(num(cur.clippers))} />
+          <PRow k="Leads inbound" v={fmtNum(leads)} />
+          <PRow k="Payé aux clippers" v={euro(paid)} />
+        </div>
+        <div className="kd-pole">
+          <div className="kd-pole-h set"><span className="kd-pole-dot" /><h3>Setting</h3><span className="kd-ptag">SetWar</span></div>
+          <PRow k="Contactés" v={fmtNum(contacted)} />
+          <PRow k="RDV pris" v={fmtNum(rdv)} />
+          <PRow k="RDV honorés" v={fmtNum(honored)} />
+          <PRow k="Booking rate" v={contacted ? Math.round((rdv / contacted) * 100) + "%" : "—"} tone="lime" />
+          <PRow k="Show-up rate" v={rdv ? Math.round((honored / rdv) * 100) + "%" : "—"} />
+        </div>
+        <div className="kd-pole">
+          <div className="kd-pole-h clo"><span className="kd-pole-dot" /><h3>Closing</h3><span className="kd-ptag">Ventes</span></div>
+          <PRow k="Closing rate" v={honored ? Math.round((ventes / honored) * 100) + "%" : "—"} tone="lime" />
+          <PRow k="Ventes" v={fmtNum(ventes)} />
+          <PRow k="Panier moyen" v={ventes ? euro(ca / ventes) : "—"} />
+          <PRow k="CA généré" v={euro(ca)} tone="gold" />
+          <PRow k="LTV / CAC" v={ltvCac != null ? ltvCac.toFixed(1) + "×" : "à régler"} tone={ltvCac != null ? "lime" : ""} />
+        </div>
+      </div>
     </div>
   );
 }
 
-/* ═══════════ Fiche conversation + qualif + RDV ═══════════ */
-function Fiche({ p, onBack, onSaved }: { p: Prospect; onBack: () => void; onSaved: (m: string) => void }) {
+function PRow({ k, v, tone }: { k: string; v: string | number; tone?: string }) {
+  return (
+    <div className="kd-prow"><span className="kd-pk">{k}</span><span className={"kd-pv " + (tone || "")}>{v}</span></div>
+  );
+}
+
+function Kpi({ label, value, hint, tone, onClick }: { label: string; value: string; hint: string; tone?: string; onClick?: () => void }) {
+  return (
+    <div className={"kd-kpi" + (onClick ? " click" : "")} onClick={onClick}>
+      <div className="kd-kpi-l">{label}</div>
+      <div className={"kd-kpi-v " + (tone || "")}>{value}</div>
+      <div className="kd-kpi-h">{hint}</div>
+    </div>
+  );
+}
+
+/* ═══════════ Rapport individuel ═══════════ */
+function SetterReport({ setter, biz, onBack }: { setter: SetterRow; biz: BizParams; onBack: () => void }) {
   const db = getSupabase();
-  const [situation, setSituation] = useState(p.need || "");
-  const [objectif, setObjectif] = useState(p.interet || "");
-  const [budget, setBudget] = useState(p.budget || "");
-  const [timing, setTiming] = useState("");
-  const [note, setNote] = useState(p.note || "");
-  const [rdvOpen, setRdvOpen] = useState(false);
+  const [ov, setOv] = useState<Overview | null>(null);
+  const [funnel, setFunnel] = useState<Funnel[]>([]);
+  const [prospects, setProspects] = useState<Prospect[]>([]);
+  const [extra, setExtra] = useState<Extra | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      const [o, f, p, x] = await Promise.all([
+        db.rpc("admin_overview", { p_setter: setter.setter_id }),
+        db.rpc("admin_funnel", { p_setter: setter.setter_id }),
+        db.rpc("admin_setter_prospects", { p_setter: setter.setter_id }),
+        db.rpc("admin_setter_extra", { p_setter: setter.setter_id }),
+      ]);
+      setOv((o.data as Overview) || null);
+      setFunnel((f.data as Funnel[]) || []);
+      setProspects((p.data as Prospect[]) || []);
+      const ex = Array.isArray(x.data) ? (x.data as any[])[0] : (x.data as any);
+      setExtra(ex || null);
+      setLoading(false);
+    })();
+  }, [db, setter.setter_id]);
+
+  const contacted = ov?.contacted || 0;
+  const rdv = ov?.rdv_booked || 0;
+  const honored = ov?.rdv_honored || 0;
+  const vendus = ov?.vendus || 0;
+  const booking = contacted ? (rdv / contacted) * 100 : null;
+  const showup = ov?.show_up ?? (rdv ? (honored / rdv) * 100 : null);
+  const closing = honored ? (vendus / honored) * 100 : null;
+  const cac = vendus && biz.adSpend ? biz.adSpend / vendus : null;
+  const ltv = biz.avgTicket ? biz.avgTicket * biz.clientMonths : null;
+  const fecc = cac && ltv ? ltv / cac : null;
+
+  const map: Record<string, number> = {};
+  funnel.forEach((f) => { map[f.stage] = f.n; });
+  const ord = FUNNEL_ORDER.map((k) => ({ k, n: map[k] || 0 }));
+  const max = Math.max(1, ...ord.map((o) => o.n));
+
+  return (
+    <div className="kd-root">
+      <KeyanStyle />
+      <div className="kd-wrap">
+        <header className="kd-head">
+          <button className="kd-back" onClick={onBack}>‹ Retour à l'équipe</button>
+          <div className="kd-rhead">
+            <div className="kd-ava lg">{initial(setter.name)}</div>
+            <div>
+              <h1 className="kd-h1" style={{ fontSize: 30 }}>{setter.name}</h1>
+              <p className="kd-sub">Rapport individuel {!setter.is_active && "· désactivé"}</p>
+            </div>
+          </div>
+        </header>
+
+        <div className="kd-kpigrid">
+          <Kpi label="Booking rate" value={pct(booking)} hint="RDV / contacts" tone="lime" />
+          <Kpi label="Show-up rate" value={pct(showup)} hint="honorés / RDV" tone="blue" />
+          <Kpi label="Closing rate" value={pct(closing)} hint="ventes / RDV honorés" tone="lime" />
+          <Kpi label="CAC" value={cac != null ? euro(cac) : "—"} hint="coût / acquisition" tone={cac != null ? "" : "muted"} />
+          <Kpi label="LTV" value={ltv != null ? euro(ltv) : "—"} hint="valeur / client" tone={ltv != null ? "" : "muted"} />
+          <Kpi label="LTV / CAC" value={fecc != null ? fecc.toFixed(1) + "×" : "—"} hint="santé acquisition" tone={fecc != null ? (fecc >= 3 ? "lime" : "hot") : "muted"} />
+        </div>
+
+        <div className="kd-sect" style={{ paddingLeft: 4 }}>Indicateurs de comportement</div>
+        <div className="kd-kpigrid kd-kpigrid2">
+          <Kpi label="Speed-to-lead" value={ov?.avg_h != null ? ov.avg_h + "h" : "—"} hint="délai moy. → RDV" tone="" />
+          <Kpi label="Taux de réponse" value={pct(ov?.taux_reponse)} hint="répondu / contacté" tone="" />
+          <Kpi label="Taux de qualif" value={ov ? pct(ov.qualifies + ov.non_qualifies ? (ov.qualifies / (ov.qualifies + ov.non_qualifies)) * 100 : null) : "—"} hint="qualifiés / en convo" tone="" />
+          <Kpi label="No-show" value={showup != null ? pct(100 - showup) : "—"} hint="RDV manqués" tone={showup != null && 100 - showup > 30 ? "hot" : ""} />
+          <Kpi label="Temps pipeline" value={extra?.pipeline_days != null ? extra.pipeline_days + "j" : "—"} hint="création → clôture" tone="" />
+          <Kpi label="Activité / jour" value={extra?.acts_per_day != null ? String(extra.acts_per_day) : "—"} hint="gestes / jour actif" tone="" />
+        </div>
+
+        <div className="kd-cols">
+          <div className="kd-col">
+            <div className="kd-sect">Son funnel — où il perd ses prospects</div>
+            <div className="kd-card">
+              {ord.map((o, idx) => {
+                const prev = idx > 0 ? ord[idx - 1].n : o.n;
+                const drop = prev > 0 ? Math.round((1 - o.n / prev) * 100) : 0;
+                return (
+                  <div key={o.k} className="kd-fnl">
+                    <div className="kd-fnl-l">{FUNNEL_LABEL[o.k]}</div>
+                    <div className="kd-fnl-bar"><div style={{ width: `${Math.max(4, (o.n / max) * 100)}%` }} /></div>
+                    <div className="kd-fnl-n">{o.n}</div>
+                    {idx > 0 && drop > 40 && <div className="kd-fnl-drop big">−{drop}%</div>}
+                    {idx > 0 && drop > 0 && drop <= 40 && <div className="kd-fnl-drop">−{drop}%</div>}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="kd-card kd-totals">
+              <div><b>{euro(ov?.ca || 0)}</b><span>CA généré</span></div>
+              <div><b>{ov?.avg_h != null ? ov.avg_h + "h" : "—"}</b><span>tps → RDV</span></div>
+              <div><b>{ov?.qualifies || 0}</b><span>qualifiés</span></div>
+              <div><b>{ov?.perdus || 0}</b><span>perdus</span></div>
+            </div>
+          </div>
+
+          <div className="kd-col">
+            <div className="kd-sect">Ses prospects ({prospects.length})</div>
+            {loading && <div className="kd-loading">…</div>}
+            <div className="kd-plist">
+              {prospects.slice(0, 40).map((p) => (
+                <div key={p.id} className="kd-prow">
+                  <div className="kd-ava sm">{initial(p.handle)}</div>
+                  <div className="kd-pinfo">
+                    <div className="kd-pname">@{p.handle}</div>
+                    <div className="kd-pmeta">{p.interet || p.need || p.source}</div>
+                  </div>
+                  <div className="kd-pstage" data-s={p.stage}>{FUNNEL_LABEL[p.stage] || p.stage}</div>
+                </div>
+              ))}
+              {!loading && prospects.length === 0 && <div className="kd-empty">Aucun prospect.</div>}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════ Inviter un setter ═══════════ */
+function InviteSheet({ onClose }: { onClose: () => void }) {
+  const db = getSupabase();
+  const [code, setCode] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
-  const stages = ["Contacté", "En convo", "Qualifié", "RDV", "Vendu"];
-  const stageIdx =
-    ["vendu"].includes(p.stage) ? 4 :
-    ["rdv_pris", "rdv_honore"].includes(p.stage) ? 3 :
-    p.qualified === "oui" || ["pret_appel"].includes(p.stage) ? 2 :
-    ["en_convo", "repondu", "whatsapp"].includes(p.stage) ? 1 : 0;
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const link = code ? `${origin}/setwar?invite=${code}` : "";
 
-  async function saveQualif() {
+  async function generate() {
     setBusy(true);
+    setErr(null);
     try {
-      await db.rpc("update_prospect", {
-        p_id: p.id,
-        p_stage: "pret_appel",
-        p_need: situation || null,
-        p_interet: objectif || null,
-        p_budget: budget || null,
-        p_note: [note, timing ? `Timing: ${timing}` : ""].filter(Boolean).join(" · ") || null,
-        p_qualified: situation && objectif && budget ? "oui" : null,
-      });
-      onSaved("Qualif enregistrée ✓");
-      onBack();
-    } catch {
-      onSaved("Erreur — réessaie");
+      const { data, error } = await db.rpc("create_invite", { p_role: "setter" });
+      if (error) throw error;
+      // create_invite renvoie le token/code (string) ou un objet
+      const token = typeof data === "string" ? data : (data as any)?.token || (data as any)?.code || String(data);
+      setCode(token);
+    } catch (e: any) {
+      setErr(e?.message || "Impossible de générer le code.");
     } finally {
       setBusy(false);
     }
   }
 
-  return (
-    <div className="sw-fiche">
-      <div className="sw-fhead">
-        <div className="sw-fnav">
-          <button className="sw-back" onClick={onBack}>‹</button>
-          <div className="sw-date">{p.source === "inbound" ? "inbound" : p.source}{p.platform ? ` · ${p.platform}` : ""}</div>
-        </div>
-        <div className="sw-fwho">
-          <div className="sw-ava hot">{initialOf(p.handle)}</div>
-          <div>
-            <h2>@{p.handle}</h2>
-            <p>{p.clipper_name ? `clip ${p.clipper_name} · ` : ""}{p.relance_count} relance{p.relance_count > 1 ? "s" : ""}</p>
-          </div>
-        </div>
-        <div className="sw-stagebar">
-          {stages.map((s, i) => (
-            <div key={s} className={"sw-stg" + (i < stageIdx ? " done" : i === stageIdx ? " cur" : "")}>{s}</div>
-          ))}
-        </div>
-      </div>
-
-      <div className="sw-fbody">
-        <div className="sw-coachbox">💡 <b>Qualifie avant de vendre.</b> Fais parler {p.handle.split(".")[0]} : sa situation, son objectif, son budget, son timing. Une fois les 4 cochés, cale le RDV.</div>
-
-        <div className="sw-qcard">
-          <h4>Checklist de qualification</h4>
-          <QField label="Situation actuelle" ph="Ex : créateur UGC, 15k abonnés…" value={situation} onChange={setSituation} />
-          <QField label="Objectif" ph="Ex : scaler à 5k€/mois…" value={objectif} onChange={setObjectif} />
-          <QField label="Budget" ph="Ex : 1500€, à valider…" value={budget} onChange={setBudget} />
-          <QField label="Timing / urgence" ph="Ex : veut démarrer ce mois…" value={timing} onChange={setTiming} />
-        </div>
-
-        <label className="sw-lbl">Notes libres</label>
-        <textarea className="sw-fld" rows={3} value={note} autoCapitalize="sentences"
-          placeholder="Tout ce qui aide à conclure…" onChange={(e) => setNote(e.target.value)} />
-      </div>
-
-      <div className="sw-factions">
-        <button className="sw-fbtn ghost" disabled={busy} onClick={saveQualif}>Enregistrer</button>
-        <button className="sw-fbtn lime" onClick={() => setRdvOpen(true)}>Caler le RDV</button>
-      </div>
-
-      {rdvOpen && <RdvSheet p={p} onClose={() => setRdvOpen(false)} onDone={(m) => { setRdvOpen(false); onSaved(m); onBack(); }} />}
-    </div>
-  );
-}
-
-function QField({ label, ph, value, onChange }: { label: string; ph: string; value: string; onChange: (v: string) => void }) {
-  const filled = value.trim().length > 0;
-  return (
-    <div className="sw-qitem">
-      <div className={"sw-qcheck" + (filled ? " on" : "")}>
-        <svg viewBox="0 0 16 16" fill="none"><path d="M3 8.5l3.2 3L13 4.5" stroke="#0B0F04" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
-      </div>
-      <div className="sw-qlabel">
-        <div className="sw-q">{label}</div>
-        <input className="sw-qinput" value={value} placeholder={ph} autoCapitalize="sentences" onChange={(e) => onChange(e.target.value)} />
-      </div>
-    </div>
-  );
-}
-
-/* ═══════════ Feuille RDV ═══════════ */
-function RdvSheet({ p, onClose, onDone }: { p: Prospect; onClose: () => void; onDone: (m: string) => void }) {
-  const db = getSupabase();
-  const [slot, setSlot] = useState<number | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const slots = useMemo(() => {
-    const out: { label: string; date: Date }[] = [];
-    const base = new Date();
-    for (const [dayOffset, h] of [[1, 14], [1, 17], [2, 11], [2, 16]] as [number, number][]) {
-      const d = new Date(base);
-      d.setDate(d.getDate() + dayOffset);
-      d.setHours(h, 0, 0, 0);
-      out.push({ label: d.toLocaleDateString("fr-FR", { weekday: "short" }), date: d });
-    }
-    return out;
-  }, []);
-
-  async function book() {
-    if (slot === null) return;
-    setBusy(true);
-    const rdv = slots[slot].date.toISOString();
+  async function copy() {
     try {
-      // fonction dédiée si la migration est passée…
-      const { error } = await db.rpc("setwar_book_rdv", { p_id: p.id, p_rdv_at: rdv });
-      if (error) throw error;
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
     } catch {
-      // …sinon on avance au moins le stage (rdv_at sera écrit après migration)
-      await db.rpc("update_prospect", { p_id: p.id, p_stage: "rdv_pris" });
-    }
-    setBusy(false);
-    onDone("RDV calé 🎉");
-  }
-
-  return (
-    <div className="sw-scrim" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="sw-sheet">
-        <div className="sw-grab" />
-        <h3>Caler le RDV avec @{p.handle}</h3>
-        <div className="sw-subh">Choisis un créneau — un tap et c'est booké.</div>
-        <div className="sw-slots">
-          {slots.map((s, i) => (
-            <button key={i} className={"sw-slot" + (slot === i ? " on" : "")} onClick={() => setSlot(i)}>
-              {s.label}<small>{s.date.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</small>
-            </button>
-          ))}
-        </div>
-        <button className="sw-fbtn lime" style={{ width: "100%" }} disabled={slot === null || busy} onClick={book}>
-          {busy ? "…" : "Confirmer le RDV"}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/* ═══════════ Focus guidé ═══════════ */
-function Focus({ leads, onExit, onAct }: { leads: Prospect[]; onExit: () => void; onAct: (p: Prospect, kind: Bucket) => Promise<void> }) {
-  const [i, setI] = useState(0);
-  const [swiping, setSwiping] = useState(false);
-
-  if (leads.length === 0) {
-    return (
-      <div className="sw-screen">
-        <div className="sw-ftrack"><button className="sw-fx" onClick={onExit}>✕</button></div>
-        <div className="sw-bilan">
-          <div className="sw-bmk">🏆</div>
-          <h1>Rien à traiter.</h1>
-          <div className="sw-bp">Ta journée est déjà à jour. Reviens plus tard.</div>
-          <button className="sw-fprim" style={{ maxWidth: 260, marginTop: 26 }} onClick={onExit}>Retour</button>
-        </div>
-      </div>
-    );
-  }
-
-  if (i >= leads.length) {
-    const rdv = leads.filter((l) => bucketOf(l) === "confirmer").length;
-    return (
-      <div className="sw-screen">
-        <div className="sw-ftrack">
-          <button className="sw-fx" onClick={onExit}>✕</button>
-          <div className="sw-fsteps">{leads.map((_, k) => <div key={k} className="sw-fseg done"><i /></div>)}</div>
-          <div className="sw-fcount"><b>{leads.length}</b>/{leads.length}</div>
-        </div>
-        <div className="sw-bilan">
-          <div className="sw-bmk">🏆</div>
-          <h1>Session bouclée.</h1>
-          <div className="sw-bp">Tu as traité tes {leads.length} leads prioritaires. Beau travail.</div>
-          <div className="sw-bstats">
-            <div><b>{leads.length}</b><span>traités</span></div>
-            <div><b>{rdv}</b><span>à confirmer</span></div>
-          </div>
-          <button className="sw-fprim" style={{ maxWidth: 260, marginTop: 30 }} onClick={onExit}>Retour à ma journée</button>
-        </div>
-      </div>
-    );
-  }
-
-  const p = leads[i];
-  const b = bucketOf(p) || "relancer";
-  const kick = { nouveau: "Nouveau lead", relancer: "À relancer", confirmer: "RDV à confirmer", silence: "Silence radio" }[b];
-  const why = {
-    nouveau: "⚡ Réponds vite — lead frais",
-    relancer: "à relancer aujourd'hui",
-    confirmer: "⏰ Confirme la veille",
-    silence: "silencieux depuis un moment",
-  }[b];
-  const coachL = { nouveau: "Comment l'ouvrir", relancer: "Le bon move", confirmer: "Un mot suffit", silence: "Dernière carte" }[b];
-  const coach = {
-    nouveau: "<b>Une question, pas un pitch.</b> « Hey, c'est quoi ton objectif là ? »",
-    relancer: "Il est chaud. <b>Propose 2 créneaux</b> plutôt que « quand es-tu dispo ? »",
-    confirmer: "« On est bien on demain ? Hâte 🙌 »",
-    silence: "<b>Sois direct :</b> « Toujours partant, ou je te laisse tranquille ? »",
-  }[b];
-  const cta = { nouveau: "J'ai contacté", relancer: "J'ai relancé", confirmer: "RDV confirmé", silence: "J'ai relancé" }[b];
-  const body = p.interet || p.need || p.note;
-
-  function next(kind: Bucket | null) {
-    setSwiping(true);
-    setTimeout(async () => {
-      if (kind) await onAct(p, kind);
-      setI((n) => n + 1);
-      setSwiping(false);
-    }, 300);
-  }
-
-  return (
-    <div className="sw-screen">
-      <div className="sw-ftrack">
-        <button className="sw-fx" onClick={onExit}>✕</button>
-        <div className="sw-fsteps">
-          {leads.map((_, k) => <div key={k} className={"sw-fseg" + (k < i ? " done" : "")}><i /></div>)}
-        </div>
-        <div className="sw-fcount"><b>{i + 1}</b>/{leads.length}</div>
-      </div>
-
-      <div className="sw-fstage">
-        <div className={"sw-fkick" + (b === "nouveau" ? " hot" : "")}>{kick}</div>
-        <div className={"sw-fcard" + (swiping ? " swipe" : " enter")}>
-          <div className="sw-fwho2">
-            <div className={"sw-ava " + avaCls(b)}>{initialOf(p.handle)}</div>
-            <div><h2>@{p.handle}</h2><p>{p.source} · {p.relance_count} relance{p.relance_count > 1 ? "s" : ""}</p></div>
-          </div>
-          {body && <div className="sw-fquote">« {body} »</div>}
-          <div className="sw-fwhy">{why}</div>
-          <div className="sw-fcoach"><div className="l">{coachL}</div><span dangerouslySetInnerHTML={{ __html: coach }} /></div>
-        </div>
-      </div>
-
-      <div className="sw-fdock">
-        <button className="sw-fprim" onClick={() => next(b)}>{cta}</button>
-        <div className="sw-fsec">
-          <button onClick={() => next(null)}>Plus tard</button>
-          <button onClick={() => next(null)}>Passer</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ═══════════ Stats setter ═══════════ */
-function Stats({ stats, first }: { stats: any; first: string }) {
-  const s = stats || {};
-  const rdv = s.rdv || 0;
-  const vendus = s.vendus || 0;
-  const contacted = (s.froid_contacte || 0) + (s.froid_repondu || 0) + (s.froid_whatsapp || 0) + (s.en_convo || 0) + (s.pret_appel || 0) + rdv + vendus;
-  const bookRate = contacted ? Math.round((rdv / contacted) * 100) : 0;
-  const closeRate = rdv ? Math.round((vendus / rdv) * 100) : 0;
-
-  const funnel: [string, number][] = [
-    ["Contactés", contacted],
-    ["Répondu", s.froid_repondu || 0],
-    ["En convo", s.en_convo || 0],
-    ["Prêt appel", s.pret_appel || 0],
-    ["RDV", rdv],
-    ["Vendus", vendus],
-  ];
-  const max = Math.max(1, ...funnel.map(([, n]) => n));
-
-  return (
-    <div className="sw-screen">
-      <header className="sw-head">
-        <div className="sw-top"><div className="sw-mark">Mes <b>stats</b></div><div className="sw-date">7 jours</div></div>
-        <div className="sw-hello">Ta semaine, {first}.</div>
-        <div className="sw-sub">Tout est calculé depuis tes gestes — rien à saisir.</div>
-      </header>
-      <div className="sw-list">
-        <div className="sw-sect">Ce qui compte pour Keyan</div>
-        <div className="sw-kpi"><div><div className="k">Booking rate</div><div className="v">{bookRate}<small>%</small></div></div><div className="hint">RDV / contacts</div></div>
-        <div className="sw-kpi"><div><div className="k">Closing rate</div><div className="v">{closeRate}<small>%</small></div></div><div className="hint">ventes / RDV</div></div>
-        <div className="sw-kpi"><div><div className="k">RDV bookés</div><div className="v">{rdv}</div></div><div className="hint">cette semaine</div></div>
-        <div className="sw-kpi"><div><div className="k">Ventes</div><div className="v">{vendus}</div></div><div className="hint">closées</div></div>
-        <div className="sw-sect">Ton funnel</div>
-        <div className="sw-row">
-          {funnel.map(([l, n]) => (
-            <div key={l} className="sw-fnl">
-              <div className="l">{l}</div>
-              <div className="bar"><div style={{ width: `${Math.max(6, (n / max) * 100)}%` }} /></div>
-              <div className="n">{n}</div>
-            </div>
-          ))}
-        </div>
-        <div className="sw-note-mini">CAC et LTV nécessitent tes coûts d'acquisition et paniers — on les ajoutera dans le dashboard de Keyan.</div>
-      </div>
-    </div>
-  );
-}
-
-/* ═══════════ Vivier : CRM complet ═══════════ */
-function Vivier({ rows, onOpen, onRelance }: { rows: Prospect[]; onOpen: (p: Prospect) => void; onRelance: (p: Prospect) => void }) {
-  const [q, setQ] = useState("");
-  const [stg, setStg] = useState<string>("all");
-
-  const counts = useMemo(() => {
-    const c: Record<string, number> = {};
-    for (const p of rows) c[p.stage] = (c[p.stage] || 0) + 1;
-    return c;
-  }, [rows]);
-
-  const filtered = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    return rows
-      .filter((p) => (stg === "all" ? true : p.stage === stg))
-      .filter((p) => (!needle ? true : (p.handle + " " + (p.interet || "") + " " + (p.need || "") + " " + (p.note || "")).toLowerCase().includes(needle)))
-      .sort((a, b) => new Date(b.last_activity_at).getTime() - new Date(a.last_activity_at).getTime());
-  }, [rows, q, stg]);
-
-  const stagesPresent = ALL_STAGES.filter((s) => counts[s.v]);
-
-  return (
-    <div className="sw-screen">
-      <header className="sw-head">
-        <div className="sw-top"><div className="sw-mark">Ton <b>vivier</b></div><div className="sw-date">{rows.length} prospects</div></div>
-        <div className="sw-hello">Tout ton pipeline.</div>
-        <div className="sw-searchbar">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4-4" /></svg>
-          <input placeholder="Chercher un @pseudo, un besoin…" value={q} autoCapitalize="none" autoCorrect="off" onChange={(e) => setQ(e.target.value)} />
-          {q && <button className="sw-clr" onClick={() => setQ("")}>✕</button>}
-        </div>
-      </header>
-
-      <div className="sw-fils">
-        <button className={"sw-fil" + (stg === "all" ? " on" : "")} onClick={() => setStg("all")}>Tous <span className="sw-cnt">{rows.length}</span></button>
-        {stagesPresent.map((s) => (
-          <button key={s.v} className={"sw-fil" + (stg === s.v ? " on" : "")} onClick={() => setStg(stg === s.v ? "all" : s.v)}>
-            {s.l}<span className="sw-cnt">{counts[s.v]}</span>
-          </button>
-        ))}
-      </div>
-
-      <div className="sw-list">
-        {filtered.length === 0 && (
-          <div className="sw-empty"><div className="sw-emark">🔍</div><h3>Rien ici.</h3><p>Aucun prospect ne correspond.</p></div>
-        )}
-        {filtered.map((p) => {
-          const done = DONE_STAGES.includes(p.stage);
-          return (
-            <div key={p.id} className="sw-vrow" onClick={() => onOpen(p)}>
-              <div className={"sw-ava " + (p.stage === "vendu" ? "hot" : p.stage === "rdv_pris" ? "blue" : "")}>{initialOf(p.handle)}</div>
-              <div className="sw-rid">
-                <div className="sw-rname">@{p.handle}</div>
-                <div className="sw-rsub">{p.interet || p.need || p.source}{p.rdv_at ? ` · RDV ${new Date(p.rdv_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })}` : ""}</div>
-              </div>
-              <div className="sw-vstage" data-s={p.stage}>{stageLabel(p.stage)}</div>
-              {!done && (
-                <button className="sw-vquick" onClick={(e) => { e.stopPropagation(); onRelance(p); }} aria-label="Relancer">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></svg>
-                </button>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-/* ═══════════ Profil : identité, niveau, série, réglages ═══════════ */
-function Profil({ first, userName, stats, rows, onFlash }: { first: string; userName?: string; stats: any; rows: Prospect[]; onFlash: (m: string) => void }) {
-  const db = getSupabase();
-  const s = stats || {};
-  const vendus = s.vendus || 0;
-  const rdv = s.rdv || 0;
-
-  // niveau simple basé sur les résultats vérifiables (ventes + RDV)
-  const score = vendus * 3 + rdv;
-  const level = score >= 30 ? { name: "Pro", pct: 100, next: null } :
-                score >= 12 ? { name: "Confirmé", pct: Math.round(((score - 12) / 18) * 100), next: "Pro" } :
-                { name: "Débutant", pct: Math.round((score / 12) * 100), next: "Confirmé" };
-
-  const totalProspects = rows.length;
-  const active = rows.filter((p) => !DONE_STAGES.includes(p.stage)).length;
-
-  async function logout() {
-    await db.auth.signOut();
-    onFlash("Déconnexion…");
-  }
-
-  return (
-    <div className="sw-screen">
-      <header className="sw-head">
-        <div className="sw-top"><div className="sw-mark">Ton <b>profil</b></div></div>
-        <div className="sw-pidentity">
-          <div className="sw-ava hot" style={{ width: 64, height: 64, fontSize: 26, borderRadius: 20 }}>{initialOf(first)}</div>
-          <div>
-            <div className="sw-pname">{userName || first}</div>
-            <div className="sw-prole">Setter · niveau {level.name}</div>
-          </div>
-        </div>
-      </header>
-
-      <div className="sw-list">
-        <div className="sw-sect">Ta progression</div>
-        <div className="sw-levelcard">
-          <div className="sw-leveltop">
-            <span className="sw-levelname">{level.name}</span>
-            {level.next && <span className="sw-levelnext">→ {level.next}</span>}
-          </div>
-          <div className="sw-levelbar"><i style={{ width: `${level.pct}%` }} /></div>
-          <div className="sw-levelhint">
-            {level.next ? `Encore quelques ventes et RDV pour débloquer ${level.next}.` : "Niveau max atteint. Tu es au sommet 🔥"}
-          </div>
-        </div>
-
-        <div className="sw-pgrid">
-          <div className="sw-pstat"><b>{vendus}</b><span>ventes</span></div>
-          <div className="sw-pstat"><b>{rdv}</b><span>RDV</span></div>
-          <div className="sw-pstat"><b>{active}</b><span>en cours</span></div>
-          <div className="sw-pstat"><b>{totalProspects}</b><span>au total</span></div>
-        </div>
-
-        <div className="sw-sect">Réglages</div>
-        <button className="sw-prow" onClick={() => onFlash("Bientôt — notifications")}>
-          <span>🔔 Notifications</span><span className="sw-parr">›</span>
-        </button>
-        <button className="sw-prow" onClick={() => onFlash("Bientôt — script froid")}>
-          <span>💬 Mon script d'approche</span><span className="sw-parr">›</span>
-        </button>
-        <button className="sw-prow" onClick={() => onFlash("Bientôt — aide")}>
-          <span>❓ Aide & astuces</span><span className="sw-parr">›</span>
-        </button>
-        <button className="sw-prow logout" onClick={logout}>
-          <span>Se déconnecter</span>
-        </button>
-
-        <div className="sw-note-mini">SetWar · console setter — connecté à ClipWar.</div>
-      </div>
-    </div>
-  );
-}
-
-
-/* ═══════════ Ajout prospect ═══════════ */
-function AddSheet({ onClose, onDone }: { onClose: () => void; onDone: (m: string) => void }) {
-  const db = getSupabase();
-  const [val, setVal] = useState("");
-  const [bulk, setBulk] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  const preview = !bulk ? parseHandle(val) : null;
-
-  async function paste() {
-    try {
-      const clip = await navigator.clipboard.readText();
-      if (clip) setVal(clip.trim());
-    } catch {
-      setErr("Colle manuellement dans le champ.");
-    }
-  }
-
-  async function save() {
-    setErr(null);
-    setBusy(true);
-    try {
-      if (bulk) {
-        const handles = val.split(/[\n,]+/).map((x) => parseHandle(x)).filter((x): x is { handle: string; platform: string | null } => !!x).map((x) => x.handle);
-        if (!handles.length) { setErr("Aucun pseudo valide."); setBusy(false); return; }
-        const { error } = await db.rpc("add_prospects_bulk", { p_handles: handles, p_source: "froid" });
-        if (error) throw error;
-        onDone(`${handles.length} prospects ajoutés`);
-      } else {
-        const h = parseHandle(val);
-        if (!h) { setErr("Pseudo invalide. Colle un lien ou tape @pseudo."); setBusy(false); return; }
-        const { error } = await db.rpc("add_prospect", { p_handle: h.handle, p_clipper: null, p_need: null, p_source: "froid" });
-        if (error) throw error;
-        onDone(`@${h.handle} ajouté`);
-      }
-    } catch (e: any) {
-      setErr(e?.message || "Impossible d'ajouter — réessaie.");
-      setBusy(false);
+      /* fallback : l'utilisateur copie à la main */
     }
   }
 
   return (
-    <div className="sw-scrim" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="sw-sheet">
-        <div className="sw-grab" />
-        <h3>Noter un prospect</h3>
-        <div className="sw-seg">
-          <button className={!bulk ? "on" : ""} onClick={() => setBulk(false)}>Un</button>
-          <button className={bulk ? "on" : ""} onClick={() => setBulk(true)}>En lot</button>
-        </div>
-        {!bulk ? (
-          <>
-            <label className="sw-lbl">Colle un lien Insta/TikTok, ou tape un @pseudo</label>
-            <div className="sw-fldrow">
-              <input className="sw-fld" autoFocus inputMode="text" autoCapitalize="none" autoCorrect="off"
-                placeholder="@le.pseudo" value={val} onChange={(e) => setVal(e.target.value)} />
-              <button type="button" className="sw-paste" onClick={paste}>Coller</button>
-            </div>
-            {preview && <div className="sw-prev">→ <b>@{preview.handle}</b>{preview.platform ? ` · ${preview.platform}` : ""}</div>}
-          </>
+    <div className="kd-scrim" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="kd-sheet">
+        <h3>Inviter un setter</h3>
+        <p className="kd-shint">Génère un lien unique. Le setter crée son compte via ce lien et devient automatiquement setter — tu n'as rien d'autre à faire.</p>
+
+        {!code ? (
+          <button className="kd-save" disabled={busy} onClick={generate}>{busy ? "…" : "🔑 Générer un lien d'invitation"}</button>
         ) : (
           <>
-            <label className="sw-lbl">Colle plusieurs liens/pseudos (un par ligne)</label>
-            <textarea className="sw-fld" rows={5} autoCapitalize="none" autoCorrect="off"
-              placeholder={"instagram.com/lea.fit\ntiktok.com/@marc.ugc\n@sami.k"} value={val} onChange={(e) => setVal(e.target.value)} />
+            <label className="kd-lbl">Lien à envoyer au setter (WhatsApp, DM…)</label>
+            <div className="kd-invlink">{link}</div>
+            <button className="kd-save" onClick={copy}>{copied ? "✓ Copié !" : "Copier le lien"}</button>
+            <button className="kd-invnew" onClick={generate} disabled={busy}>{busy ? "…" : "Générer un autre lien"}</button>
           </>
         )}
-        {err && <div className="sw-err">{err}</div>}
-        <button className="sw-act sw-save" disabled={busy || (!bulk && !preview)} onClick={save}>
-          {busy ? "…" : bulk ? "Ajouter le lot" : "Ajouter"}
+        {err && <div className="kd-err">{err}</div>}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════ Paramètres business (CAC/LTV) ═══════════ */
+function BizSheet({ biz, onClose, onSave }: { biz: BizParams; onClose: () => void; onSave: (b: BizParams) => void }) {
+  const [adSpend, setAdSpend] = useState(String(biz.adSpend || ""));
+  const [avgTicket, setAvgTicket] = useState(String(biz.avgTicket || ""));
+  const [clientMonths, setClientMonths] = useState(String(biz.clientMonths || 1));
+
+  return (
+    <div className="kd-scrim" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="kd-sheet">
+        <div className="kd-grab" />
+        <h3>Paramètres pour CAC & LTV</h3>
+        <p className="kd-shint">Ces chiffres ne sont pas dans l'app — entre-les pour activer CAC, LTV et le ratio LTV/CAC.</p>
+        <label className="kd-lbl">Budget pub dépensé (période, €)</label>
+        <input className="kd-fld" inputMode="decimal" placeholder="Ex : 3000" value={adSpend} onChange={(e) => setAdSpend(e.target.value)} />
+        <label className="kd-lbl">Panier moyen par client (€)</label>
+        <input className="kd-fld" inputMode="decimal" placeholder="Ex : 1500" value={avgTicket} onChange={(e) => setAvgTicket(e.target.value)} />
+        <label className="kd-lbl">Durée moyenne d'un client (mois)</label>
+        <input className="kd-fld" inputMode="decimal" placeholder="Ex : 6" value={clientMonths} onChange={(e) => setClientMonths(e.target.value)} />
+        <button className="kd-save" onClick={() => onSave({ adSpend: +adSpend || 0, avgTicket: +avgTicket || 0, clientMonths: +clientMonths || 1 })}>
+          Enregistrer
         </button>
       </div>
     </div>
   );
 }
 
-/* ═══════════ Styles ═══════════ */
-function SetWarStyle() {
+function KeyanStyle() {
   return (
     <style>{`
-    .sw-root{--bg:#FBFAF8;--bg2:#F2F1EC;--card:#FFFFFF;--card2:#F7F6F2;--line:#ECEAE3;--line2:#E1DED5;--txt:#15140F;--mut:#6E6B62;--mut2:#A6A399;--lime:#3A6B2E;--lime-dim:#EAF3E4;--lime-ink:#FFFFFF;--hot:#C4551F;--blue:#2F6FD6;--blue-dim:#E6EFFB;--track:#EDEBE4;--sh:0 1px 3px rgba(20,18,10,.05),0 4px 16px rgba(20,18,10,.04);font-family:"Manrope","Inter",system-ui,sans-serif;color:var(--txt);background:var(--bg);min-height:100dvh;max-width:520px;margin:0 auto;position:relative;-webkit-tap-highlight-color:transparent;-webkit-font-smoothing:antialiased}
-    .sw-root *{box-sizing:border-box}
-    .sw-screen{display:flex;flex-direction:column;min-height:100dvh;padding-bottom:96px;animation:sw-fade .3s}
-    @keyframes sw-fade{from{opacity:0}to{opacity:1}}
-    .sw-head{padding:32px 22px 12px}
-    .sw-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px}
-    .sw-mark{font-weight:800;font-size:17px}.sw-mark b{color:var(--lime)}
-    .sw-date{font-size:12px;font-weight:700;color:var(--mut);background:var(--card);border:1px solid var(--line);padding:6px 11px;border-radius:20px;text-transform:capitalize}
-    .sw-hello{font-size:29px;font-weight:800;letter-spacing:-.03em;line-height:1.05}
-    .sw-sub{margin-top:8px;font-size:14px;color:var(--mut);font-weight:500}.sw-sub b{color:var(--lime);font-weight:700}
-    .sw-prog{margin-top:18px}
-    .sw-bar{height:5px;border-radius:20px;background:var(--track);overflow:hidden}
-    .sw-bar i{display:block;height:100%;background:var(--lime);border-radius:20px;transition:width .5s;}
-    .sw-plbl{display:flex;justify-content:space-between;margin-top:8px;font-size:11.5px;color:var(--mut2);font-weight:600}.sw-plbl b{color:var(--txt)}
-    .sw-brief{margin:14px 22px 0;background:linear-gradient(160deg,var(--lime-dim),transparent);border:1px solid rgba(58,107,46,.2);border-radius:20px;padding:18px}
-    .sw-brief h3{font-size:15px;font-weight:800;margin-bottom:5px}
-    .sw-brief p{font-size:13px;color:var(--mut);line-height:1.5;margin-bottom:14px}
-    .sw-go{width:100%;background:var(--lime);color:var(--lime-ink);font-weight:800;font-size:15px;padding:15px;border:none;border-radius:14px;cursor:pointer}
-    .sw-fils{display:flex;gap:8px;padding:14px 22px 4px;overflow-x:auto}
-    .sw-fils::-webkit-scrollbar{display:none}
-    .sw-fil{flex:none;display:flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--line);padding:9px 14px;border-radius:12px;font-size:13px;font-weight:600;color:var(--mut);cursor:pointer;font-family:inherit}
-    .sw-fil.on{background:var(--txt);color:var(--bg)}
-    .sw-cnt{font-size:11px;font-weight:800;min-width:18px;height:18px;padding:0 5px;border-radius:9px;display:flex;align-items:center;justify-content:center;background:var(--lime);color:var(--lime-ink)}
-    .sw-fil.on .sw-cnt{background:var(--bg);color:var(--lime)}
-    .sw-fil.zero{opacity:.4}.sw-fil.zero .sw-cnt{background:var(--line2);color:var(--mut)}
-    .sw-list{padding:14px 16px 0}
-    .sw-loading{padding:40px;text-align:center;color:var(--mut2)}
-    .sw-sect{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--mut2);padding:14px 8px 10px}
-    .sw-row{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:15px;margin-bottom:10px;cursor:pointer;box-shadow:var(--sh);transition:transform .2s,box-shadow .2s}
-    .sw-row:active{transform:scale(.99);border-color:var(--line2)}
-    .sw-rtop{display:flex;align-items:center;gap:12px}
-    .sw-ava{width:44px;height:44px;border-radius:13px;flex:none;background:var(--card2);border:1px solid var(--line2);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;color:var(--mut)}
-    .sw-ava.hot{background:var(--lime-dim);border-color:rgba(58,107,46,.3);color:var(--lime)}
-    .sw-ava.blue{background:var(--blue-dim);border-color:rgba(107,167,255,.3);color:var(--blue)}
-    .sw-rid{flex:1;min-width:0}
-    .sw-rname{font-weight:700;font-size:16px;letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .sw-rsub{font-size:12.5px;color:var(--mut2);margin-top:2px;font-weight:500}
-    .sw-rtag{font-size:10px;font-weight:800;letter-spacing:.02em;color:var(--mut);border:1px solid var(--line2);padding:4px 8px;border-radius:7px;text-transform:uppercase;white-space:nowrap}
-    .sw-rtag.hot{color:var(--lime);border-color:rgba(58,107,46,.3)}
-    .sw-rtag.blue{color:var(--blue);border-color:rgba(107,167,255,.3)}
-    .sw-chev{color:var(--mut2);font-size:20px;margin-left:2px}
-    .sw-rbody{font-size:13.5px;color:var(--mut);line-height:1.5;margin:11px 2px 0;font-style:italic}
-    .sw-rwhen{font-size:12.5px;margin:10px 2px 0;font-weight:600;color:var(--lime)}
-    .sw-rwhen.hot{color:var(--hot)}.sw-rwhen.calm{color:var(--mut2);font-weight:500}
-    .sw-act{margin-top:13px;width:100%;border:none;border-radius:13px;padding:13px;font-family:inherit;font-weight:700;font-size:14.5px;cursor:pointer;background:var(--lime);color:var(--lime-ink);letter-spacing:-.01em}
-    .sw-act.ghost{background:transparent;color:var(--txt);border:1px solid var(--line2)}
-    .sw-act:active{transform:scale(.98)}.sw-act:disabled{opacity:.5}
-    .sw-empty{text-align:center;padding:56px 30px}
-    .sw-emark{width:56px;height:56px;border-radius:18px;margin:0 auto 16px;background:var(--lime-dim);border:1px solid rgba(58,107,46,.25);display:flex;align-items:center;justify-content:center;font-size:26px}
-    .sw-empty h3{font-size:18px;font-weight:800}
-    .sw-empty p{font-size:13.5px;color:var(--mut2);margin-top:6px;line-height:1.5}
-    /* fiche */
-    .sw-fiche{min-height:100dvh;padding-bottom:96px;animation:sw-fade .3s}
-    .sw-fhead{padding:26px 22px 18px;background:linear-gradient(160deg,var(--card),transparent);border-bottom:1px solid var(--line)}
-    .sw-fnav{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
-    .sw-back{width:38px;height:38px;border-radius:12px;background:var(--card);border:1px solid var(--line2);color:var(--txt);font-size:20px;cursor:pointer}
-    .sw-fwho{display:flex;align-items:center;gap:14px}
-    .sw-fwho .sw-ava{width:56px;height:56px;font-size:22px;border-radius:17px}
-    .sw-fwho h2{font-size:22px;font-weight:800;letter-spacing:-.02em}
-    .sw-fwho p{font-size:13px;color:var(--mut2);margin-top:2px}
-    .sw-stagebar{display:flex;gap:5px;margin-top:18px}
-    .sw-stg{flex:1;text-align:center;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--mut2);padding:7px 2px;border-radius:8px;background:var(--card);border:1px solid var(--line)}
-    .sw-stg.done{color:var(--lime-ink);background:var(--lime);border-color:var(--lime)}
-    .sw-stg.cur{color:var(--lime);border-color:var(--lime)}
-    .sw-fbody{padding:20px 22px}
-    .sw-coachbox{background:var(--blue-dim);border:1px solid rgba(107,167,255,.2);border-radius:14px;padding:14px 16px;margin-bottom:14px;font-size:13px;color:#2A5599;line-height:1.55}
-    .sw-coachbox b{color:#1E3F70}
-    .sw-qcard{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;margin-bottom:16px;box-shadow:var(--sh)}
-    .sw-qcard h4{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--mut2);margin-bottom:8px}
-    .sw-qitem{display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
-    .sw-qitem:last-child{border-bottom:none}
-    .sw-qcheck{width:26px;height:26px;border-radius:8px;border:2px solid var(--line2);flex:none;display:flex;align-items:center;justify-content:center;margin-top:2px;transition:all .2s}
-    .sw-qcheck.on{background:var(--lime);border-color:var(--lime)}
-    .sw-qcheck svg{width:15px;height:15px;opacity:0;transition:opacity .2s}
-    .sw-qcheck.on svg{opacity:1}
-    .sw-qlabel{flex:1;min-width:0}
-    .sw-q{font-size:14px;font-weight:600;margin-bottom:3px}
-    .sw-qinput{width:100%;background:transparent;border:none;color:var(--txt);font-family:inherit;font-size:13px;outline:none;padding:0}
-    .sw-qinput::placeholder{color:var(--mut2);font-style:italic}
-    .sw-lbl{font-size:12px;color:var(--mut);display:block;margin-bottom:8px}
-    .sw-fld{width:100%;background:var(--bg2);border:1px solid var(--line2);border-radius:12px;padding:13px 14px;color:var(--txt);font-family:inherit;font-size:16px;outline:none;resize:none}
-    .sw-fld:focus{border-color:var(--lime)}
-    .sw-factions{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:520px;padding:14px 22px calc(16px + env(safe-area-inset-bottom));background:linear-gradient(to top,var(--bg) 70%,transparent);display:flex;gap:10px}
-    .sw-fbtn{flex:1;border:none;border-radius:15px;padding:15px;font-family:inherit;font-weight:800;font-size:14.5px;cursor:pointer;text-align:center}
-    .sw-fbtn.lime{background:var(--lime);color:var(--lime-ink)}
-    .sw-fbtn.ghost{background:transparent;border:1px solid var(--line2);color:var(--txt)}
-    .sw-fbtn:disabled{opacity:.5}
-    /* modale */
-    .sw-scrim{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.65);display:flex;align-items:flex-end;justify-content:center}
-    .sw-sheet{width:100%;max-width:520px;background:var(--card);border-radius:24px 24px 0 0;padding:10px 22px calc(26px + env(safe-area-inset-bottom));border-top:1px solid var(--line2);animation:sw-up .3s cubic-bezier(.2,.9,.3,1)}
-    @keyframes sw-up{from{transform:translateY(100%)}to{transform:none}}
-    .sw-grab{width:38px;height:4px;border-radius:3px;background:var(--mut2);margin:6px auto 16px;opacity:.5}
-    .sw-sheet h3{font-size:19px;font-weight:800;margin-bottom:4px}
-    .sw-subh{font-size:13px;color:var(--mut);margin-bottom:18px}
-    .sw-slots{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
-    .sw-slot{background:var(--bg2);border:1px solid var(--line2);border-radius:13px;padding:13px;text-align:center;font-weight:700;font-size:14px;color:var(--txt);font-family:inherit;cursor:pointer;text-transform:capitalize}
-    .sw-slot.on{background:var(--lime);color:var(--lime-ink);border-color:var(--lime)}
-    .sw-slot small{display:block;font-size:11px;opacity:.7;margin-top:2px;font-weight:600}
-    .sw-seg{display:flex;gap:6px;background:var(--bg2);border-radius:12px;padding:4px;margin-bottom:16px}
-    .sw-seg button{flex:1;border:none;background:transparent;color:var(--mut);font-family:inherit;font-weight:700;font-size:13px;padding:9px;border-radius:9px;cursor:pointer}
-    .sw-seg button.on{background:var(--lime);color:var(--lime-ink)}
-    .sw-fldrow{display:flex;gap:8px;align-items:stretch}
-    .sw-fldrow .sw-fld{flex:1;min-width:0;width:auto}
-    .sw-paste{flex:none;background:var(--card2);border:1px solid var(--line2);border-radius:12px;color:var(--txt);font-family:inherit;font-weight:700;font-size:13px;padding:0 15px;cursor:pointer}
-    .sw-prev{margin-top:10px;font-size:14px;color:var(--lime)}.sw-prev b{color:#fff}
-    .sw-err{margin-top:12px;font-size:12.5px;color:#C4551F;background:#FBEDE4;border:1px solid #F1D9C9;border-radius:10px;padding:10px 12px;line-height:1.4}
-    .sw-save{margin-top:16px}
-    /* focus */
-    .sw-ftrack{padding:22px 22px 6px;display:flex;align-items:center;gap:12px}
-    .sw-fx{width:34px;height:34px;border-radius:11px;border:1px solid var(--line2);background:var(--card);color:var(--mut);font-size:16px;cursor:pointer}
-    .sw-fsteps{flex:1;display:flex;gap:5px}
-    .sw-fseg{flex:1;height:5px;border-radius:20px;background:var(--track);overflow:hidden}
-    .sw-fseg i{display:block;height:100%;width:0;background:var(--lime);border-radius:20px;transition:width .5s}
-    .sw-fseg.done i{width:100%}
-    .sw-fcount{font-size:12px;font-weight:700;color:var(--mut)}.sw-fcount b{color:var(--txt)}
-    .sw-fstage{flex:1;display:flex;flex-direction:column;justify-content:center;padding:8px 22px 0}
-    .sw-fkick{font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--lime);margin-bottom:14px}
-    .sw-fkick.hot{color:var(--hot)}
-    .sw-fcard{background:var(--card);border:1px solid var(--line);border-radius:26px;padding:26px 24px;transition:transform .3s cubic-bezier(.2,.9,.3,1),opacity .3s}
-    .sw-fcard.enter{animation:sw-enter .4s cubic-bezier(.2,.9,.3,1)}
-    .sw-fcard.swipe{transform:translateX(-120%) rotate(-4deg);opacity:0}
-    @keyframes sw-enter{from{transform:translateX(60%) rotate(3deg);opacity:0}to{transform:none;opacity:1}}
-    .sw-fwho2{display:flex;align-items:center;gap:15px;margin-bottom:18px}
-    .sw-fwho2 .sw-ava{width:58px;height:58px;border-radius:18px;font-size:23px}
-    .sw-fwho2 h2{font-size:23px;font-weight:800;letter-spacing:-.02em}
-    .sw-fwho2 p{font-size:13px;color:var(--mut2);margin-top:3px}
-    .sw-fquote{font-size:15.5px;line-height:1.55;margin-bottom:16px;font-weight:500;font-style:italic;color:var(--mut)}
-    .sw-fwhy{display:inline-flex;gap:7px;font-size:13px;font-weight:600;color:var(--lime);background:var(--lime-dim);padding:8px 13px;border-radius:20px;margin-bottom:16px}
-    .sw-fcoach{padding:14px 16px;background:var(--bg);border:1px solid var(--line);border-radius:16px;font-size:13.5px;color:var(--mut);line-height:1.5}
-    .sw-fcoach .l{font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--mut2);margin-bottom:6px}
-    .sw-fcoach b{color:var(--txt)}
-    .sw-fdock{padding:16px 22px calc(20px + env(safe-area-inset-bottom))}
-    .sw-fprim{width:100%;border:none;border-radius:17px;padding:17px;font-family:inherit;font-weight:800;font-size:16px;background:var(--lime);color:var(--lime-ink);cursor:pointer}
-    .sw-fsec{display:flex;gap:10px;margin-top:10px}
-    .sw-fsec button{flex:1;border:1px solid var(--line2);background:transparent;color:var(--mut);border-radius:14px;padding:12px;font-family:inherit;font-weight:600;font-size:13px;cursor:pointer}
-    .sw-bilan{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px 30px}
-    .sw-bmk{width:76px;height:76px;border-radius:24px;background:var(--lime-dim);border:1px solid rgba(58,107,46,.3);display:flex;align-items:center;justify-content:center;margin-bottom:20px;font-size:36px}
-    .sw-bilan h1{font-size:25px;font-weight:800}
-    .sw-bp{font-size:14px;color:var(--mut);margin-top:8px;line-height:1.5;max-width:280px}
-    .sw-bstats{display:flex;gap:30px;margin-top:26px}
-    .sw-bstats div b{display:block;font-size:28px;font-weight:800;color:var(--lime)}
-    .sw-bstats div span{font-size:11px;color:var(--mut2);text-transform:uppercase;letter-spacing:.05em;font-weight:700}
-    /* stats */
-    .sw-kpi{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;box-shadow:var(--sh)}
-    .sw-kpi .k{font-size:13px;color:var(--mut)}
-    .sw-kpi .v{font-size:26px;font-weight:800;margin-top:2px}
-    .sw-kpi .v small{font-size:15px;color:var(--mut)}
-    .sw-kpi .hint{font-size:11px;color:var(--mut2);text-align:right;font-weight:600}
-    .sw-fnl{display:flex;align-items:center;gap:10px;margin-bottom:8px}
-    .sw-fnl .l{width:80px;font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.3px;font-weight:700}
-    .sw-fnl .bar{flex:1;height:16px;background:var(--bg2);border-radius:6px;overflow:hidden}
-    .sw-fnl .bar div{height:100%;background:var(--lime);border-radius:6px}
-    .sw-fnl .n{width:26px;text-align:right;font-weight:800}
-    .sw-note-mini{font-size:12px;color:var(--mut2);line-height:1.5;padding:14px 8px;font-style:italic}
-    /* vivier */
-    .sw-searchbar{display:flex;align-items:center;gap:10px;margin-top:16px;background:var(--card);border:1px solid var(--line2);border-radius:14px;padding:0 14px}
-    .sw-searchbar svg{width:18px;height:18px;color:var(--mut2);flex:none}
-    .sw-searchbar input{flex:1;background:none;border:none;color:var(--txt);font-family:inherit;font-size:15px;padding:13px 0;outline:none}
-    .sw-searchbar input::placeholder{color:var(--mut2)}
-    .sw-clr{background:none;border:none;color:var(--mut2);font-size:15px;cursor:pointer;padding:4px}
-    .sw-vrow{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 14px;margin-bottom:9px;cursor:pointer;box-shadow:var(--sh);transition:transform .2s}
-    .sw-vrow:active{transform:scale(.99);border-color:var(--line2)}
-    .sw-vrow .sw-ava{width:40px;height:40px;font-size:15px;border-radius:12px}
-    .sw-vstage{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.02em;color:var(--mut);border:1px solid var(--line2);padding:4px 8px;border-radius:7px;white-space:nowrap}
-    .sw-vstage[data-s="vendu"]{color:var(--lime);border-color:rgba(58,107,46,.3)}
-    .sw-vstage[data-s="rdv_pris"],.sw-vstage[data-s="rdv_honore"]{color:var(--blue);border-color:rgba(107,167,255,.3)}
-    .sw-vstage[data-s="perdu"]{color:var(--mut2);opacity:.7}
-    .sw-vquick{flex:none;width:36px;height:36px;border-radius:11px;background:var(--card2);border:1px solid var(--line2);color:var(--mut);display:flex;align-items:center;justify-content:center;cursor:pointer}
-    .sw-vquick svg{width:17px;height:17px}
-    .sw-vquick:active{background:var(--lime);color:var(--lime-ink)}
-    /* profil */
-    .sw-pidentity{display:flex;align-items:center;gap:15px;margin-top:14px}
-    .sw-pname{font-size:22px;font-weight:800;letter-spacing:-.02em}
-    .sw-prole{font-size:13px;color:var(--mut);margin-top:3px;font-weight:500}
-    .sw-levelcard{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;margin-bottom:14px;box-shadow:var(--sh)}
-    .sw-leveltop{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
-    .sw-levelname{font-size:16px;font-weight:800;color:var(--lime)}
-    .sw-levelnext{font-size:12px;font-weight:700;color:var(--mut2)}
-    .sw-levelbar{height:8px;border-radius:20px;background:var(--track);overflow:hidden}
-    .sw-levelbar i{display:block;height:100%;background:var(--lime);border-radius:20px;;transition:width .5s}
-    .sw-levelhint{font-size:12.5px;color:var(--mut);margin-top:10px;line-height:1.5}
-    .sw-pgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:6px}
-    .sw-pstat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 6px;text-align:center;box-shadow:var(--sh)}
-    .sw-pstat b{display:block;font-size:22px;font-weight:800}
-    .sw-pstat span{font-size:10px;color:var(--mut2);text-transform:uppercase;letter-spacing:.03em;font-weight:700}
-    .sw-prow{width:100%;display:flex;align-items:center;justify-content:space-between;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:15px 16px;margin-bottom:9px;font-family:inherit;font-size:14.5px;font-weight:600;color:var(--txt);cursor:pointer;box-shadow:var(--sh)}
-    .sw-parr{color:var(--mut2);font-size:18px}
-    .sw-prow.logout{justify-content:center;color:var(--hot);border-color:rgba(255,139,107,.25);margin-top:6px}
-    /* nav */
-    .sw-nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:520px;display:flex;align-items:center;justify-content:space-around;padding:12px 20px calc(14px + env(safe-area-inset-bottom));background:linear-gradient(to top,var(--bg) 60%,transparent);z-index:20}
-    .sw-navit{background:none;border:none;color:var(--mut2);display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10px;font-weight:600;cursor:pointer;font-family:inherit}
-    .sw-navit.on{color:var(--txt)}
-    .sw-navit svg{width:22px;height:22px}
-    .sw-navfab{width:52px;height:52px;border-radius:16px;background:var(--lime);border:none;display:flex;align-items:center;justify-content:center;cursor:pointer}
-    .sw-navfab svg{width:24px;height:24px}
-    .sw-toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);z-index:80;background:var(--txt);color:var(--bg);font-weight:700;font-size:13px;padding:11px 18px;border-radius:13px;box-shadow:0 10px 30px rgba(0,0,0,.5);animation:sw-tin .28s ease}
-    @keyframes sw-tin{from{opacity:0;transform:translate(-50%,12px)}to{opacity:1;transform:translate(-50%,0)}}
-
-    /* ══════════ DESKTOP (≥ 900px) ══════════ */
-    @media (min-width:900px){
-      .sw-root{max-width:1120px;padding:0 40px 40px;background:var(--bg)}
-      /* deux colonnes : contenu large, respiration */
-      .sw-screen{padding-bottom:40px}
-      .sw-head{padding:44px 8px 8px;max-width:760px;margin:0 auto;width:100%}
-      .sw-hello{font-size:40px}
-      .sw-sub{font-size:16px}
-      .sw-mark{font-size:19px}
-      .sw-brief{max-width:760px;margin:18px auto 0;padding:24px 28px;display:grid;grid-template-columns:1fr auto;align-items:center;gap:24px}
-      .sw-brief h3{font-size:17px}
-      .sw-brief p{margin-bottom:0;font-size:14px}
-      .sw-go{width:auto;white-space:nowrap;padding:15px 28px}
-      .sw-fils{max-width:760px;margin:0 auto;padding:18px 8px 4px;flex-wrap:wrap;overflow:visible}
-      /* la liste en grille de cartes (2 colonnes) */
-      .sw-list{max-width:940px;margin:0 auto;padding:18px 8px 0;width:100%}
-      .sw-sect{padding:20px 6px 12px;font-size:12px}
-      .sw-list > .sw-sect{grid-column:1/-1}
-      .sw-cardgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-      .sw-row{margin-bottom:0}
-      .sw-row:hover{transform:translateY(-2px);box-shadow:0 8px 28px rgba(20,18,10,.10)}
-      .sw-vrow:hover{transform:translateY(-1px);box-shadow:0 8px 24px rgba(20,18,10,.09)}
-      /* fiche : centrée, large, confortable */
-      .sw-fiche{max-width:720px;margin:0 auto;width:100%}
-      .sw-fhead{padding:40px 8px 22px}
-      .sw-fwho h2{font-size:26px}
-      .sw-fbody{padding:26px 8px}
-      .sw-factions{max-width:720px;padding:16px 8px 28px;position:sticky;background:linear-gradient(to top,var(--bg) 80%,transparent)}
-      /* focus : carte centrée grand écran */
-      .sw-ftrack{max-width:640px;margin:0 auto;padding:32px 8px 6px;width:100%}
-      .sw-fstage{max-width:640px;margin:0 auto;width:100%;padding:16px 8px 0;flex:none}
-      .sw-fcard{padding:34px 32px}
-      .sw-fdock{max-width:640px;margin:0 auto;width:100%;padding:20px 8px}
-      .sw-bilan{padding:70px 30px}
-      /* stats / profil : grille aérée */
-      .sw-kpi{margin-bottom:0}
-      .sw-pgrid{grid-template-columns:repeat(4,1fr);max-width:760px;margin-left:auto;margin-right:auto}
-      .sw-searchbar{max-width:760px}
-      /* modale : centrée, pas collée en bas */
-      .sw-scrim{align-items:center}
-      .sw-sheet{max-width:460px;border-radius:24px;animation:sw-pop .3s cubic-bezier(.2,.9,.3,1)}
-      /* nav : barre centrée, plus large */
-      .sw-nav{max-width:1120px;justify-content:center;gap:48px;padding:16px 40px 24px}
-      .sw-navit{flex-direction:row;gap:8px;font-size:13px;padding:8px 4px}
-      .sw-navit svg{width:20px;height:20px}
+    .kd-root{--bg:#FBFAF8;--bg2:#F2F1EC;--card:#FFFFFF;--line:#ECEAE3;--line2:#E1DED5;--txt:#15140F;--mut:#6E6B62;--mut2:#A6A399;--lime:#3A6B2E;--lime-dim:#EAF3E4;--hot:#C4551F;--gold:#B8860B;--blue:#2F6FD6;--blue-dim:#E6EFFB;--track:#EDEBE4;--sh:0 1px 3px rgba(20,18,10,.05),0 4px 16px rgba(20,18,10,.04);font-family:"Manrope","Inter",system-ui,sans-serif;color:var(--txt);background:var(--bg);min-height:100dvh;-webkit-font-smoothing:antialiased}
+    .kd-root *{box-sizing:border-box}
+    /* rapport global */
+    .kd-report{margin-bottom:12px}
+    .kd-rtop{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+    .kd-periods{display:flex;gap:6px;background:var(--card);border:1px solid var(--line2);border-radius:13px;padding:4px;box-shadow:var(--sh)}
+    .kd-periods button{padding:9px 16px;border-radius:10px;font-family:inherit;font-weight:700;font-size:13px;color:var(--mut);border:none;background:none;cursor:pointer}
+    .kd-periods button.on{background:var(--lime);color:#fff}
+    .kd-badge{font-size:10px;font-weight:700;color:var(--mut);background:var(--bg2);padding:3px 8px;border-radius:6px;margin-left:8px;text-transform:none;letter-spacing:0}
+    .kd-hero{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:14px;margin-bottom:8px}
+    .kd-hero-roi{background:linear-gradient(135deg,#15140F,#2A2820);color:#fff;border-radius:22px;padding:26px 28px;box-shadow:var(--sh)}
+    .kd-hero-roi .l{font-size:13px;font-weight:600;opacity:.7}
+    .kd-hero-roi .v{font-size:52px;font-weight:800;letter-spacing:-.03em;line-height:1;margin:8px 0}
+    .kd-hero-roi .v small{font-size:24px;opacity:.8}
+    .kd-hero-roi .d{font-size:13px;font-weight:600;color:#CDFB5E}
+    .kd-hero-card{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:24px;box-shadow:var(--sh);display:flex;flex-direction:column;justify-content:center}
+    .kd-hero-card .l{font-size:13px;color:var(--mut);font-weight:600}
+    .kd-hero-card .v{font-size:34px;font-weight:800;letter-spacing:-.02em;margin:6px 0 3px}
+    .kd-hero-card .v.gold{color:var(--gold)}
+    .kd-hero-card .d{font-size:12px;font-weight:700}
+    .up{color:var(--lime)}.down{color:var(--hot)}
+    .kd-funnel{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:24px;box-shadow:var(--sh);margin-bottom:8px}
+    .kd-fstage{display:flex;align-items:center;gap:14px;margin-bottom:11px}
+    .kd-fstage:last-child{margin-bottom:0}
+    .kd-fzone{width:88px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--mut2)}
+    .kd-fname{width:120px;font-size:13.5px;font-weight:700}
+    .kd-fbar{flex:1;height:26px;background:var(--track);border-radius:8px;overflow:hidden}
+    .kd-fbar div{height:100%;border-radius:8px;display:flex;align-items:center;padding-left:12px;font-size:12px;font-weight:800;color:#fff;min-width:44px}
+    .kd-fbar .b-acq{background:linear-gradient(90deg,#2F6FD6,#5B93E8)}
+    .kd-fbar .b-set{background:linear-gradient(90deg,#3A6B2E,#5B9B45)}
+    .kd-fbar .b-clo{background:linear-gradient(90deg,#B8860B,#D4A82C)}
+    .kd-fnum{width:80px;text-align:right;font-weight:800;font-size:15px}
+    .kd-fconv{width:56px;text-align:right;font-size:11px;font-weight:700;color:var(--mut2)}
+    .kd-fconv.warn{color:var(--hot)}
+    .kd-poles{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:8px}
+    .kd-pole{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:20px;box-shadow:var(--sh)}
+    .kd-pole-h{display:flex;align-items:center;gap:9px;margin-bottom:14px}
+    .kd-pole-dot{width:9px;height:9px;border-radius:50%}
+    .kd-pole-h.acq .kd-pole-dot{background:var(--blue)}
+    .kd-pole-h.set .kd-pole-dot{background:var(--lime)}
+    .kd-pole-h.clo .kd-pole-dot{background:var(--gold)}
+    .kd-pole-h h3{font-size:14px;font-weight:800}
+    .kd-ptag{font-size:10px;font-weight:700;color:var(--mut2);margin-left:auto;text-transform:uppercase;letter-spacing:.04em}
+    .kd-prow{display:flex;justify-content:space-between;align-items:baseline;padding:9px 0;border-bottom:1px solid var(--line)}
+    .kd-prow:last-child{border-bottom:none}
+    .kd-pk{font-size:13px;color:var(--mut)}
+    .kd-pv{font-size:17px;font-weight:800}
+    .kd-pv.hot{color:var(--hot)}.kd-pv.lime{color:var(--lime)}.kd-pv.gold{color:var(--gold)}
+    .kd-wrap{max-width:1180px;margin:0 auto;padding:32px 24px 60px}
+    .kd-head{margin-bottom:24px}
+    .kd-htop{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+    .kd-mark{font-weight:800;font-size:16px}.kd-mark b{color:var(--lime)}
+    .kd-cfg{background:var(--card);border:1px solid var(--line2);border-radius:11px;padding:9px 14px;font-family:inherit;font-weight:600;font-size:13px;color:var(--mut);cursor:pointer}
+    .kd-h1{font-size:34px;font-weight:800;letter-spacing:-.03em;line-height:1.05}
+    .kd-sub{margin-top:7px;font-size:15px;color:var(--mut);font-weight:500}
+    .kd-back{background:none;border:none;color:var(--mut);font-family:inherit;font-weight:700;font-size:14px;cursor:pointer;padding:0;margin-bottom:18px}
+    .kd-rhead{display:flex;align-items:center;gap:16px}
+    /* KPIs */
+    .kd-kpigrid{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:28px}
+    .kd-kpigrid2{margin-top:4px}
+    .kd-kpigrid2 .kd-kpi{padding:14px 14px;background:var(--bg2);box-shadow:none}
+    .kd-kpigrid2 .kd-kpi-v{font-size:22px}
+    .kd-kpi{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px 16px;box-shadow:var(--sh)}
+    .kd-kpi.click{cursor:pointer}
+    .kd-kpi-l{font-size:12px;color:var(--mut);font-weight:600}
+    .kd-kpi-v{font-size:30px;font-weight:800;letter-spacing:-.02em;margin:6px 0 2px}
+    .kd-kpi-v.lime{color:var(--lime)}.kd-kpi-v.blue{color:var(--blue)}.kd-kpi-v.hot{color:var(--hot)}.kd-kpi-v.muted{color:var(--mut2);font-size:18px;font-weight:700}
+    .kd-kpi-h{font-size:11px;color:var(--mut2);font-weight:500}
+    /* colonnes */
+    .kd-cols{display:grid;grid-template-columns:1.2fr 1fr;gap:20px;align-items:start}
+    .kd-col{min-width:0}
+    .kd-sect{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mut2);padding:8px 4px 12px}
+    .kd-loading{padding:30px;text-align:center;color:var(--mut2)}
+    .kd-empty{padding:24px;text-align:center;color:var(--mut2);font-size:13px;background:var(--card);border:1px solid var(--line);border-radius:16px}
+    /* setter row */
+    .kd-setter{width:100%;display:flex;align-items:center;gap:13px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px 16px;margin-bottom:10px;box-shadow:var(--sh);cursor:pointer;font-family:inherit;text-align:left;transition:transform .2s,box-shadow .2s}
+    .kd-setter:hover{transform:translateY(-2px);box-shadow:0 8px 26px rgba(20,18,10,.10)}
+    .kd-rank{width:24px;font-weight:800;font-size:15px;color:var(--mut2);text-align:center}
+    .kd-rank[data-top="1"]{color:var(--lime)}
+    .kd-ava{width:44px;height:44px;border-radius:13px;flex:none;background:var(--lime-dim);border:1px solid rgba(58,107,46,.2);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;color:var(--lime)}
+    .kd-ava.lg{width:60px;height:60px;font-size:24px;border-radius:18px}
+    .kd-ava.sm{width:36px;height:36px;font-size:14px;border-radius:11px}
+    .kd-sinfo{flex:1;min-width:0}
+    .kd-sname{font-weight:700;font-size:16px}
+    .kd-off{font-size:9px;font-weight:800;text-transform:uppercase;color:var(--hot);margin-left:6px}
+    .kd-smeta{font-size:12px;color:var(--mut2);margin-top:2px;font-weight:500}
+    .kd-sright{text-align:right}
+    .kd-sca{font-weight:800;font-size:15px}
+    .kd-svendus{font-size:11px;color:var(--mut2);font-weight:600}
+    .kd-chev{color:var(--mut2);font-size:20px}
+    /* card + funnel */
+    .kd-card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:var(--sh);margin-bottom:16px}
+    .kd-fnl{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+    .kd-fnl:last-child{margin-bottom:0}
+    .kd-fnl-l{width:88px;font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.3px;font-weight:700}
+    .kd-fnl-bar{flex:1;height:18px;background:var(--track);border-radius:6px;overflow:hidden}
+    .kd-fnl-bar div{height:100%;background:var(--lime);border-radius:6px;transition:width .5s}
+    .kd-fnl-n{width:32px;text-align:right;font-weight:800}
+    .kd-fnl-drop{font-size:10px;font-weight:700;color:var(--mut2);width:42px;text-align:right}
+    .kd-fnl-drop.big{color:var(--hot)}
+    .kd-totals{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    .kd-totals div b{display:block;font-size:22px;font-weight:800}
+    .kd-totals div span{font-size:11px;color:var(--mut2);text-transform:uppercase;letter-spacing:.04em;font-weight:700}
+    /* prospects */
+    .kd-plist{max-height:600px;overflow-y:auto}
+    .kd-prow{display:flex;align-items:center;gap:11px;background:var(--card);border:1px solid var(--line);border-radius:13px;padding:10px 13px;margin-bottom:8px;box-shadow:var(--sh)}
+    .kd-pinfo{flex:1;min-width:0}
+    .kd-pname{font-weight:700;font-size:14px}
+    .kd-pmeta{font-size:11.5px;color:var(--mut2);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .kd-pstage{font-size:10px;font-weight:800;text-transform:uppercase;color:var(--mut);border:1px solid var(--line2);padding:4px 8px;border-radius:7px;white-space:nowrap}
+    .kd-pstage[data-s="vendu"]{color:var(--lime);border-color:rgba(58,107,46,.3)}
+    .kd-pstage[data-s="rdv_pris"],.kd-pstage[data-s="rdv_honore"]{color:var(--blue);border-color:rgba(47,111,214,.3)}
+    /* sheet */
+    .kd-scrim{position:fixed;inset:0;z-index:60;background:rgba(20,18,10,.4);display:flex;align-items:center;justify-content:center;padding:20px}
+    .kd-sheet{width:100%;max-width:440px;background:var(--card);border-radius:24px;padding:24px;box-shadow:0 20px 60px rgba(20,18,10,.2)}
+    .kd-grab{display:none}
+    .kd-sheet h3{font-size:19px;font-weight:800;margin-bottom:6px}
+    .kd-shint{font-size:13px;color:var(--mut);line-height:1.5;margin-bottom:18px}
+    .kd-lbl{font-size:12px;color:var(--mut);font-weight:600;display:block;margin:14px 0 7px}
+    .kd-fld{width:100%;background:var(--bg2);border:1px solid var(--line2);border-radius:12px;padding:13px 14px;color:var(--txt);font-family:inherit;font-size:16px;outline:none}
+    .kd-fld:focus{border-color:var(--lime)}
+    .kd-save{width:100%;margin-top:20px;background:var(--lime);color:#fff;border:none;border-radius:14px;padding:15px;font-family:inherit;font-weight:800;font-size:15px;cursor:pointer}
+    .kd-invlink{background:var(--bg2);border:1px solid var(--line2);border-radius:12px;padding:14px;font-size:13px;font-weight:600;word-break:break-all;color:var(--lime);margin-bottom:4px}
+    .kd-invnew{width:100%;margin-top:10px;background:none;border:1px solid var(--line2);border-radius:12px;padding:12px;font-family:inherit;font-weight:700;font-size:13px;color:var(--mut);cursor:pointer}
+    .kd-err{margin-top:12px;font-size:12.5px;color:var(--hot);background:var(--hot-dim);border:1px solid rgba(196,85,31,.2);border-radius:10px;padding:10px 12px}
+    @media (max-width:820px){
+      .kd-kpigrid{grid-template-columns:repeat(3,1fr)}
+      .kd-cols{grid-template-columns:1fr}
+      .kd-wrap{padding:24px 16px 60px}
+      .kd-h1{font-size:28px}
+      .kd-hero,.kd-poles{grid-template-columns:1fr}
+      .kd-fzone{display:none}
+      .kd-fname{width:92px;font-size:12px}
+      .kd-rtop{flex-wrap:wrap;gap:10px}
     }
-    @keyframes sw-pop{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
-    /* très grand écran : la liste passe en 3 colonnes */
-    @media (min-width:1300px){
-      .sw-root{max-width:1280px}
-      .sw-cardgrid{grid-template-columns:1fr 1fr 1fr}
-      .sw-list{max-width:1200px}
+    @media (max-width:480px){
+      .kd-kpigrid{grid-template-columns:repeat(2,1fr)}
     }
     `}</style>
   );
