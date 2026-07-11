@@ -230,6 +230,111 @@ function RefreshViewsButton({ actions }: { actions: AdmActions }) {
   );
 }
 
+type Growth = { active_now: number; active_prev: number; retained: number; retention_rate: number | null;
+  new_now: number; churned: number; reactivated: number; dormant: number; pubs_now: number; avg_clips: number | null; views_now: number };
+type AtRisk = { clipper_id: string; name: string; instagram: string | null; last_clip: string; days_silent: number; clips: number };
+
+function GrowthCockpit({ actions }: { actions: AdmActions }) {
+  const [g, setG] = useState<Growth | null>(null);
+  const [risk, setRisk] = useState<AtRisk[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    Promise.all([getSupabase().rpc("admin_growth"), getSupabase().rpc("admin_at_risk")]).then(([gr, rk]) => {
+      if (!alive) return;
+      const row = Array.isArray(gr.data) ? gr.data[0] : gr.data;
+      setG((row as Growth) || null);
+      setRisk((rk.data as AtRisk[]) || []);
+      setLoaded(true);
+    });
+    return () => { alive = false; };
+  }, []);
+  const rate = g?.retention_rate ?? null;
+  const rateColor = rate == null ? "var(--mut)" : rate >= 40 ? "var(--mint)" : rate >= 25 ? "var(--amber)" : "var(--coral)";
+  const net = g ? (g.new_now + g.reactivated - g.churned) : 0;
+  return (
+    <>
+      <div className="sec-h"><h2>Croissance &amp; Rétention</h2><span className="s" style={{ color: "var(--mut)" }}>cette semaine</span></div>
+      {!loaded ? <div className="card"><div className="empty">Chargement…</div></div>
+        : !g ? <div className="card"><div className="empty">Lance le SQL d&apos;analyse pour activer cette section.</div></div>
+        : (
+        <>
+          <div className="card" style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 10 }}>
+            <div style={{ textAlign: "center", minWidth: 92 }}>
+              <div style={{ fontSize: 34, fontWeight: 900, fontStyle: "italic", color: rateColor, lineHeight: 1 }}>{rate == null ? "—" : rate + "%"}</div>
+              <div className="l" style={{ fontSize: 10.5, marginTop: 4 }}>RÉTENTION S/S-1</div>
+            </div>
+            <div style={{ flex: 1, fontSize: 12.5, color: "var(--mut)", lineHeight: 1.5 }}>
+              {g.retained} clipper{g.retained > 1 ? "s" : ""} sur {g.active_prev} sont revenus cette semaine.
+              <div style={{ marginTop: 4, fontWeight: 700, color: net >= 0 ? "var(--mint)" : "var(--coral)" }}>
+                Solde net : {net >= 0 ? "+" : ""}{net} clipper{Math.abs(net) > 1 ? "s" : ""}
+              </div>
+            </div>
+          </div>
+          <div className="adm-kpis">
+            <div className="adm-kpi"><div className="v gr">{g.active_now}</div><div className="l">actifs</div></div>
+            <div className="adm-kpi"><div className="v" style={{ color: "var(--mint)" }}>{g.new_now}</div><div className="l">nouveaux</div></div>
+            <div className="adm-kpi"><div className="v" style={{ color: "var(--coral)" }}>{g.churned}</div><div className="l">perdus</div></div>
+            <div className="adm-kpi"><div className="v" style={{ color: "var(--amber)" }}>{g.reactivated}</div><div className="l">réactivés</div></div>
+            <div className="adm-kpi"><div className="v">{g.dormant}</div><div className="l">dormants &gt;14j</div></div>
+            <div className="adm-kpi"><div className="v">{g.avg_clips ?? 0}</div><div className="l">pubs / actif</div></div>
+          </div>
+
+          <div className="sec-h" style={{ marginTop: 16 }}><h2>À relancer</h2><span className="s" style={{ color: "var(--mut)" }}>{risk.length}</span></div>
+          <div className="card">
+            <div style={{ fontSize: 12, color: "var(--mut)", marginBottom: risk.length ? 10 : 0 }}>Ils postaient puis se sont arrêtés. Les plus faciles à récupérer — à confier aux setters.</div>
+            {risk.length ? risk.map((r) => (
+              <div className="row" key={r.clipper_id} style={{ cursor: "pointer" }} onClick={() => actions.openClipper(r.clipper_id)}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="t">{r.name}{r.instagram ? <span className="s" style={{ marginLeft: 6 }}>{r.instagram}</span> : ""}</div>
+                  <div className="s">{r.clips} clip{r.clips > 1 ? "s" : ""} · dernier il y a {r.days_silent} j</div>
+                </div>
+                <div className="end"><div className="delta" style={{ color: r.days_silent > 21 ? "var(--coral)" : "var(--amber)" }}>{r.days_silent}j</div></div>
+              </div>
+            )) : <div className="empty">Personne à risque 🎉</div>}
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+function WeeklyStats() {
+  type Wk = { week_start: string; views_gained: number; paid_amount: number; paid_views: number; clips_published: number; active_clippers: number };
+  const [rows, setRows] = useState<Wk[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    getSupabase().rpc("admin_weekly").then(({ data }) => { if (alive) { setRows((data as Wk[]) || []); setLoaded(true); } });
+    return () => { alive = false; };
+  }, []);
+  const fmtWeek = (d: string) => {
+    const s = new Date(d); const e = new Date(s); e.setDate(e.getDate() + 6);
+    const o: Intl.DateTimeFormatOptions = { day: "2-digit", month: "short" };
+    return `${s.toLocaleDateString("fr-FR", o)} → ${e.toLocaleDateString("fr-FR", o)}`;
+  };
+  return (
+    <>
+      <div className="sec-h"><h2>Bilan par semaine</h2></div>
+      <div className="card">
+        {!loaded ? <div className="empty">Chargement…</div>
+          : rows.length ? rows.map((w) => (
+            <div className="row" key={w.week_start}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="t" style={{ fontSize: 13.5 }}>Sem. {fmtWeek(w.week_start)}</div>
+                <div className="s">{fmt(w.views_gained)} vues · {w.clips_published} pub{w.clips_published > 1 ? "s" : ""} · {w.active_clippers} actif{w.active_clippers > 1 ? "s" : ""}</div>
+              </div>
+              <div className="end">
+                <div className="vue mono" style={{ color: w.paid_amount > 0 ? "var(--mint)" : "var(--mut2)" }}>{euro(w.paid_amount)}</div>
+                <div className="delta flat">{w.paid_amount > 0 ? "payé" : "—"}</div>
+              </div>
+            </div>
+          )) : <div className="empty">Pas encore de données hebdomadaires.</div>}
+      </div>
+    </>
+  );
+}
+
 function Dash({ data, catalog, isOwner, actions }: { data: AdminData; catalog: Catalog; isOwner?: boolean; actions: AdmActions }) {
   const pepites = [...data.assets].filter((a) => a.downloads > 0).sort((a, b) => b.vues / b.downloads - a.vues / a.downloads).slice(0, 3);
   const topClippers = [...data.clippers].sort((a, b) => b.vues_7 - a.vues_7).slice(0, 3);
@@ -270,6 +375,8 @@ function Dash({ data, catalog, isOwner, actions }: { data: AdminData; catalog: C
           <div className="as">{topAlert.detail || "Signal détecté sur un clip."}</div></div></div>
       ) : <div className="card"><div className="empty">Aucune alerte. Le bouclier veille.</div></div>}
 
+      <GrowthCockpit actions={actions} />
+
       <div className="sec-h"><h2>Top clippers</h2><span className="more" onClick={() => actions.go("clippers")}>Voir tout</span></div>
       <div className="card">
         {data.loading ? <div className="empty">Chargement…</div>
@@ -284,6 +391,8 @@ function Dash({ data, catalog, isOwner, actions }: { data: AdminData; catalog: C
 
       <div className="sec-h"><h2>Tes pépites</h2><span className="more" onClick={() => actions.go("assets")}>Tous les assets</span></div>
       <div className="card">{pepites.length ? pepites.map((a) => <PepiteRow a={a} catalog={catalog} key={a.id} />) : <div className="empty">Les pépites apparaîtront dès que des assets seront téléchargés et clippés.</div>}</div>
+
+      <WeeklyStats />
     </>
   );
 }
