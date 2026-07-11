@@ -234,9 +234,11 @@ export default function SetWar({ userName }: { userName?: string }) {
             {!loading && visibleSections.map((s) => (
               <React.Fragment key={s.key}>
                 <div className="sw-sect">{s.head}</div>
-                {buckets[s.key].map((p) => (
-                  <ListRow key={p.id} p={p} bucket={s.key} onOpen={() => openFiche(p)} onAct={() => act(p, s.key)} />
-                ))}
+                <div className="sw-cardgrid">
+                  {buckets[s.key].map((p) => (
+                    <ListRow key={p.id} p={p} bucket={s.key} onOpen={() => openFiche(p)} onAct={() => act(p, s.key)} />
+                  ))}
+                </div>
               </React.Fragment>
             ))}
           </div>
@@ -1076,6 +1078,60 @@ function SetWarStyle() {
     .sw-navfab svg{width:24px;height:24px}
     .sw-toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);z-index:80;background:var(--txt);color:var(--bg);font-weight:700;font-size:13px;padding:11px 18px;border-radius:13px;box-shadow:0 10px 30px rgba(0,0,0,.5);animation:sw-tin .28s ease}
     @keyframes sw-tin{from{opacity:0;transform:translate(-50%,12px)}to{opacity:1;transform:translate(-50%,0)}}
+
+    /* ══════════ DESKTOP (≥ 900px) ══════════ */
+    @media (min-width:900px){
+      .sw-root{max-width:1120px;padding:0 40px 40px;background:var(--bg)}
+      /* deux colonnes : contenu large, respiration */
+      .sw-screen{padding-bottom:40px}
+      .sw-head{padding:44px 8px 8px;max-width:760px;margin:0 auto;width:100%}
+      .sw-hello{font-size:40px}
+      .sw-sub{font-size:16px}
+      .sw-mark{font-size:19px}
+      .sw-brief{max-width:760px;margin:18px auto 0;padding:24px 28px;display:grid;grid-template-columns:1fr auto;align-items:center;gap:24px}
+      .sw-brief h3{font-size:17px}
+      .sw-brief p{margin-bottom:0;font-size:14px}
+      .sw-go{width:auto;white-space:nowrap;padding:15px 28px}
+      .sw-fils{max-width:760px;margin:0 auto;padding:18px 8px 4px;flex-wrap:wrap;overflow:visible}
+      /* la liste en grille de cartes (2 colonnes) */
+      .sw-list{max-width:940px;margin:0 auto;padding:18px 8px 0;width:100%}
+      .sw-sect{padding:20px 6px 12px;font-size:12px}
+      .sw-list > .sw-sect{grid-column:1/-1}
+      .sw-cardgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+      .sw-row{margin-bottom:0}
+      .sw-row:hover{transform:translateY(-2px);box-shadow:0 8px 28px rgba(20,18,10,.10)}
+      .sw-vrow:hover{transform:translateY(-1px);box-shadow:0 8px 24px rgba(20,18,10,.09)}
+      /* fiche : centrée, large, confortable */
+      .sw-fiche{max-width:720px;margin:0 auto;width:100%}
+      .sw-fhead{padding:40px 8px 22px}
+      .sw-fwho h2{font-size:26px}
+      .sw-fbody{padding:26px 8px}
+      .sw-factions{max-width:720px;padding:16px 8px 28px;position:sticky;background:linear-gradient(to top,var(--bg) 80%,transparent)}
+      /* focus : carte centrée grand écran */
+      .sw-ftrack{max-width:640px;margin:0 auto;padding:32px 8px 6px;width:100%}
+      .sw-fstage{max-width:640px;margin:0 auto;width:100%;padding:16px 8px 0;flex:none}
+      .sw-fcard{padding:34px 32px}
+      .sw-fdock{max-width:640px;margin:0 auto;width:100%;padding:20px 8px}
+      .sw-bilan{padding:70px 30px}
+      /* stats / profil : grille aérée */
+      .sw-kpi{margin-bottom:0}
+      .sw-pgrid{grid-template-columns:repeat(4,1fr);max-width:760px;margin-left:auto;margin-right:auto}
+      .sw-searchbar{max-width:760px}
+      /* modale : centrée, pas collée en bas */
+      .sw-scrim{align-items:center}
+      .sw-sheet{max-width:460px;border-radius:24px;animation:sw-pop .3s cubic-bezier(.2,.9,.3,1)}
+      /* nav : barre centrée, plus large */
+      .sw-nav{max-width:1120px;justify-content:center;gap:48px;padding:16px 40px 24px}
+      .sw-navit{flex-direction:row;gap:8px;font-size:13px;padding:8px 4px}
+      .sw-navit svg{width:20px;height:20px}
+    }
+    @keyframes sw-pop{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
+    /* très grand écran : la liste passe en 3 colonnes */
+    @media (min-width:1300px){
+      .sw-root{max-width:1280px}
+      .sw-cardgrid{grid-template-columns:1fr 1fr 1fr}
+      .sw-list{max-width:1200px}
+    }
     `}</style>
   );
 }
