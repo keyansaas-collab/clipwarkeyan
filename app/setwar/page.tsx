@@ -6,24 +6,25 @@ import SetWar from "@/components/SetWar";
 type Prof = { display_name: string | null; role: string } | null;
 
 export default function SetWarPage() {
-  const [session, setSession] = useState<any>(undefined); // undefined = chargement
+  const [session, setSession] = useState<any>(undefined);
   const [profile, setProfile] = useState<Prof>(null);
   const [ready, setReady] = useState(false);
-  const [inviteState, setInviteState] = useState<"none" | "working" | "failed">(
-    typeof window !== "undefined" && new URLSearchParams(window.location.search).has("invite") ? "working" : "none"
-  );
-  const inviteDone = useRef(false);
+  const [inviteToken, setInviteToken] = useState<string | null>(null);
+  const [redeeming, setRedeeming] = useState(false);
+  const redeemDone = useRef(false);
 
-  // police Manrope
+  // police
   useEffect(() => {
     const id = "setwar-font";
     if (!document.getElementById(id)) {
       const l = document.createElement("link");
-      l.id = id;
-      l.rel = "stylesheet";
+      l.id = id; l.rel = "stylesheet";
       l.href = "https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800;900&display=swap";
       document.head.appendChild(l);
     }
+    // capte le code d'invitation dans l'URL
+    const t = new URLSearchParams(window.location.search).get("invite");
+    if (t) setInviteToken(t);
   }, []);
 
   const loadProfile = useCallback(async (uid: string) => {
@@ -38,117 +39,175 @@ export default function SetWarPage() {
     sb.auth.getSession().then(({ data }) => {
       const s = data.session ?? null;
       setSession(s);
-      if (s) loadProfile(s.user.id);
-      else setReady(true);
+      if (s) loadProfile(s.user.id); else setReady(true);
     });
     const { data: sub } = sb.auth.onAuthStateChange((_e, s) => {
       setSession(s ?? null);
-      if (s) loadProfile(s.user.id);
-      else { setProfile(null); setReady(true); }
+      if (s) loadProfile(s.user.id); else { setProfile(null); setReady(true); }
     });
     return () => sub.subscription.unsubscribe();
   }, [loadProfile]);
 
-  // code d'invitation ?invite=TOKEN → attribue le rôle setter
+  // applique le code d'invitation dès qu'on est connecté + clipper
   useEffect(() => {
-    if (inviteDone.current || !session || !profile) return;
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get("invite");
-    if (!token) return;
-    const cleanUrl = () => {
-      params.delete("invite");
-      const q = params.toString();
-      window.history.replaceState({}, "", window.location.pathname + (q ? "?" + q : ""));
-    };
+    if (redeemDone.current || !session || !profile || !inviteToken) return;
     if (profile.role === "clipper") {
-      inviteDone.current = true;
-      getSupabase().rpc("redeem_invite", { p_token: token }).then(({ data, error }) => {
-        cleanUrl();
-        if (error || data !== "setter") { setInviteState("failed"); return; }
-        setInviteState("none");
-        loadProfile(session.user.id);
+      redeemDone.current = true;
+      setRedeeming(true);
+      getSupabase().rpc("redeem_invite", { p_token: inviteToken }).then(({ data }) => {
+        setRedeeming(false);
+        setInviteToken(null);
+        if (data === "setter" || data === "admin" || data === "owner") loadProfile(session.user.id);
       });
     } else {
-      inviteDone.current = true;
-      setInviteState("none");
-      cleanUrl();
+      redeemDone.current = true;
+      setInviteToken(null);
     }
-  }, [session, profile, loadProfile]);
+  }, [session, profile, inviteToken, loadProfile]);
 
   // ── chargement ──
-  if (session === undefined || !ready || inviteState === "working") {
-    return <Gate><div style={{ opacity: 0.5 }}>…</div></Gate>;
-  }
+  if (session === undefined || !ready || redeeming) return <Gate><Spinner /></Gate>;
 
-  // ── pas connecté ──
-  if (!session) {
-    const inviteQS = typeof window !== "undefined" ? window.location.search : "";
-    return (
-      <Gate>
-        <div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 8 }}>Set<span style={{ color: "#CDFB5E" }}>War</span></div>
-          <div style={{ color: "#9A9EA6", fontSize: 14, marginBottom: 22, maxWidth: 260, lineHeight: 1.5 }}>
-            Connecte-toi pour ouvrir ta journée de setter.
-          </div>
-          <a href={"/" + inviteQS} style={btn}>Se connecter / créer un compte</a>
-        </div>
-      </Gate>
-    );
-  }
+  // ── pas connecté → écran d'accueil SetWar (inscription / connexion) ──
+  if (!session) return <SetWarAuth invite={inviteToken} />;
 
   const role = profile?.role;
   const allowed = role === "setter" || role === "admin" || role === "owner";
 
-  // ── invitation échouée ──
-  if (inviteState === "failed") {
-    return (
-      <Gate>
-        <div style={{ textAlign: "center", maxWidth: 300 }}>
-          <div style={{ fontSize: 40, marginBottom: 12 }}>🔑</div>
-          <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>Code d'invitation invalide</div>
-          <div style={{ color: "#9A9EA6", fontSize: 14, lineHeight: 1.5 }}>
-            Ce lien d'invitation n'est plus valide ou a déjà été utilisé. Demande un nouveau code à ton équipe.
-          </div>
-        </div>
-      </Gate>
-    );
-  }
-
-  // ── connecté mais pas setter ──
+  // ── connecté mais pas encore setter (et pas de code) ──
   if (!allowed) {
     return (
       <Gate>
-        <div style={{ textAlign: "center", maxWidth: 300 }}>
-          <div style={{ fontSize: 40, marginBottom: 12 }}>🔒</div>
+        <div style={{ textAlign: "center", maxWidth: 320 }}>
+          <Logo />
+          <div style={{ fontSize: 40, margin: "18px 0 12px" }}>🔒</div>
           <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>Accès réservé aux setters</div>
-          <div style={{ color: "#9A9EA6", fontSize: 14, lineHeight: 1.5, marginBottom: 22 }}>
-            Ton compte n'a pas encore le rôle setter. Si tu viens d'être recruté, demande à ton équipe le lien d'invitation avec ton code.
+          <div style={{ color: "#6E6B62", fontSize: 14, lineHeight: 1.5 }}>
+            Ton compte n'a pas encore le rôle setter. Demande à ton équipe le lien d'invitation avec ton code.
           </div>
-          <a href="/" style={btnGhost}>Retour à ClipWar</a>
         </div>
       </Gate>
     );
   }
 
-  // ── OK : setter ──
   return <SetWar userName={profile?.display_name || session.user.email || undefined} />;
 }
 
-function Gate({ children }: { children: React.ReactNode }) {
+/* ═══════════ Écran d'accueil SetWar : inscription + connexion ═══════════ */
+function SetWarAuth({ invite }: { invite: string | null }) {
+  const sb = getSupabase();
+  const [mode, setMode] = useState<"signup" | "login">(invite ? "signup" : "login");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [pwd, setPwd] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+
+  async function signup() {
+    if (!name.trim()) { setErr("Entre ton nom."); return; }
+    if (!email.trim()) { setErr("Entre ton email."); return; }
+    if (pwd.length < 6) { setErr("Mot de passe : 6 caractères minimum."); return; }
+    setBusy(true); setErr(null);
+    const { data, error } = await sb.auth.signUp({
+      email: email.trim(),
+      password: pwd,
+      options: {
+        data: { display_name: name.trim(), invite_token: invite || null },
+        emailRedirectTo: window.location.origin + "/setwar" + (invite ? `?invite=${invite}` : ""),
+      },
+    });
+    setBusy(false);
+    if (error) {
+      setErr(error.message.includes("already registered") ? "Un compte existe déjà avec cet email — connecte-toi." : error.message);
+      return;
+    }
+    if (!data.session) {
+      setInfo("Compte créé ✓ Vérifie ta boîte mail pour confirmer, puis connecte-toi.");
+      setMode("login");
+    }
+    // si session immédiate → onAuthStateChange prend le relais, le code d'invite s'applique
+  }
+
+  async function login() {
+    if (!email.trim()) { setErr("Entre ton email."); return; }
+    setBusy(true); setErr(null);
+    const { error } = await sb.auth.signInWithPassword({ email: email.trim(), password: pwd });
+    setBusy(false);
+    if (error) setErr("Email ou mot de passe incorrect.");
+  }
+
+  async function forgot() {
+    if (!email.trim()) { setErr("Entre ton email pour recevoir le lien."); return; }
+    setBusy(true); setErr(null);
+    const { error } = await sb.auth.resetPasswordForEmail(email.trim(), { redirectTo: window.location.origin + "/setwar" });
+    setBusy(false);
+    if (error) setErr(error.message); else setInfo("Lien de réinitialisation envoyé ✓");
+  }
+
   return (
-    <div style={{
-      minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center",
-      background: "#0A0B0D", color: "#F2F3F5", fontFamily: "Manrope, system-ui, sans-serif", padding: 24,
-    }}>{children}</div>
+    <div style={S.page}>
+      <div style={S.card}>
+        <Logo />
+        {invite && mode === "signup" && (
+          <div style={S.invite}>🎉 Tu as été invité à rejoindre l'équipe comme setter.</div>
+        )}
+        <h1 style={S.h1}>{mode === "signup" ? "Rejoins l'équipe" : "Bon retour"}</h1>
+        <p style={S.sub}>{mode === "signup" ? "Crée ton compte pour ouvrir ta journée." : "Connecte-toi à ta journée."}</p>
+
+        {mode === "signup" && (
+          <input style={S.input} placeholder="Ton nom" value={name} autoCapitalize="words"
+            onChange={(e) => setName(e.target.value)} />
+        )}
+        <input style={S.input} placeholder="Email" type="email" inputMode="email" autoCapitalize="none" autoCorrect="off"
+          value={email} onChange={(e) => setEmail(e.target.value)} />
+        <input style={S.input} placeholder="Mot de passe" type="password"
+          value={pwd} onChange={(e) => setPwd(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && (mode === "signup" ? signup() : login())} />
+
+        {err && <div style={S.err}>{err}</div>}
+        {info && <div style={S.info}>{info}</div>}
+
+        <button style={S.btn} disabled={busy} onClick={mode === "signup" ? signup : login}>
+          {busy ? "…" : mode === "signup" ? "Créer mon compte" : "Se connecter"}
+        </button>
+
+        {mode === "login" && (
+          <button style={S.link} onClick={forgot}>Mot de passe oublié ?</button>
+        )}
+
+        <div style={S.switch}>
+          {mode === "signup" ? (
+            <>Déjà un compte ? <button style={S.linkInline} onClick={() => { setMode("login"); setErr(null); }}>Se connecter</button></>
+          ) : (
+            <>Pas encore de compte ? <button style={S.linkInline} onClick={() => { setMode("signup"); setErr(null); }}>S'inscrire</button></>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
-const btn: React.CSSProperties = {
-  display: "inline-block", background: "#CDFB5E", color: "#0B0F04", fontWeight: 800,
-  textDecoration: "none", padding: "14px 24px", borderRadius: 15, fontFamily: "Manrope, system-ui, sans-serif",
-};
-const btnGhost: React.CSSProperties = {
-  display: "inline-block", background: "transparent", color: "#F2F3F5", fontWeight: 700,
-  textDecoration: "none", padding: "13px 24px", borderRadius: 15, border: "1px solid rgba(255,255,255,.15)",
-  fontFamily: "Manrope, system-ui, sans-serif",
+function Logo() {
+  return <div style={{ fontWeight: 800, fontSize: 24, letterSpacing: "-0.02em" }}>Set<span style={{ color: "#3A6B2E" }}>War</span></div>;
+}
+function Spinner() { return <div style={{ opacity: 0.4, fontSize: 15 }}>…</div>; }
+function Gate({ children }: { children: React.ReactNode }) {
+  return <div style={S.page}><div style={{ textAlign: "center" }}>{children}</div></div>;
+}
+
+const GREEN = "#3A6B2E";
+const S: Record<string, React.CSSProperties> = {
+  page: { minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#FBFAF8", color: "#15140F", fontFamily: "Manrope, system-ui, sans-serif", padding: 24 },
+  card: { width: "100%", maxWidth: 380, background: "#fff", border: "1px solid #ECEAE3", borderRadius: 24, padding: 32, boxShadow: "0 4px 24px rgba(20,18,10,.06)" },
+  invite: { marginTop: 16, background: "#EAF3E4", border: "1px solid rgba(58,107,46,.2)", borderRadius: 12, padding: "11px 14px", fontSize: 13, color: "#2C4D22", fontWeight: 600, lineHeight: 1.4 },
+  h1: { fontSize: 26, fontWeight: 800, letterSpacing: "-0.03em", marginTop: 18 },
+  sub: { fontSize: 14, color: "#6E6B62", marginTop: 6, marginBottom: 22, fontWeight: 500 },
+  input: { width: "100%", background: "#F2F1EC", border: "1px solid #E1DED5", borderRadius: 13, padding: "14px 15px", fontSize: 16, fontFamily: "inherit", color: "#15140F", outline: "none", marginBottom: 11 },
+  btn: { width: "100%", background: GREEN, color: "#fff", border: "none", borderRadius: 14, padding: 16, fontSize: 15.5, fontWeight: 800, fontFamily: "inherit", cursor: "pointer", marginTop: 6 },
+  link: { display: "block", width: "100%", textAlign: "center", background: "none", border: "none", color: "#6E6B62", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", marginTop: 14 },
+  linkInline: { background: "none", border: "none", color: GREEN, fontWeight: 800, fontFamily: "inherit", cursor: "pointer", fontSize: 13.5, padding: 0 },
+  switch: { textAlign: "center", marginTop: 20, fontSize: 13.5, color: "#6E6B62", fontWeight: 500 },
+  err: { marginTop: 4, marginBottom: 8, fontSize: 13, color: "#C4551F", background: "#FBEDE4", border: "1px solid #F1D9C9", borderRadius: 10, padding: "10px 12px" },
+  info: { marginTop: 4, marginBottom: 8, fontSize: 13, color: "#2C4D22", background: "#EAF3E4", border: "1px solid rgba(58,107,46,.2)", borderRadius: 10, padding: "10px 12px", lineHeight: 1.4 },
 };
