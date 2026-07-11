@@ -33,7 +33,21 @@ type Prospect = {
 };
 
 type Bucket = "nouveau" | "relancer" | "confirmer" | "silence";
-type Screen = "today" | "fiche" | "focus" | "stats";
+type Screen = "today" | "fiche" | "focus" | "stats" | "vivier" | "profil";
+
+const ALL_STAGES: { v: string; l: string }[] = [
+  { v: "nouveau", l: "Nouveau" },
+  { v: "contacte", l: "Contacté" },
+  { v: "repondu", l: "A répondu" },
+  { v: "en_convo", l: "En convo" },
+  { v: "whatsapp", l: "WhatsApp" },
+  { v: "pret_appel", l: "Prêt appel" },
+  { v: "rdv_pris", l: "RDV pris" },
+  { v: "rdv_honore", l: "RDV honoré" },
+  { v: "vendu", l: "Vendu" },
+  { v: "perdu", l: "Perdu" },
+];
+const stageLabel = (v: string) => ALL_STAGES.find((s) => s.v === v)?.l || v;
 
 const RELANCE_STAGES = ["en_convo", "repondu", "pret_appel", "whatsapp", "contacte", "froid"];
 const DONE_STAGES = ["vendu", "perdu", "rdv_honore"];
@@ -250,14 +264,26 @@ export default function SetWar({ userName }: { userName?: string }) {
       {/* ─────────── STATS ─────────── */}
       {screen === "stats" && <Stats stats={stats} first={first} />}
 
+      {/* ─────────── VIVIER ─────────── */}
+      {screen === "vivier" && (
+        <Vivier
+          rows={rows}
+          onOpen={(p) => openFiche(p)}
+          onRelance={async (p) => { await db.rpc("bump_relance", { p_id: p.id }); flash("Relancé"); load(); }}
+        />
+      )}
+
+      {/* ─────────── PROFIL ─────────── */}
+      {screen === "profil" && <Profil first={first} userName={userName} stats={stats} rows={rows} onFlash={flash} />}
+
       {/* ─────────── NAV ─────────── */}
-      {(screen === "today" || screen === "stats") && (
+      {(screen === "today" || screen === "stats" || screen === "vivier" || screen === "profil") && (
         <div className="sw-nav">
           <button className={"sw-navit" + (screen === "today" ? " on" : "")} onClick={() => setScreen("today")}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 10.5L12 3l9 7.5V21H3z" /></svg>
             Aujourd'hui
           </button>
-          <button className="sw-navit" onClick={() => flash("Vivier — bientôt")}>
+          <button className={"sw-navit" + (screen === "vivier" ? " on" : "")} onClick={() => setScreen("vivier")}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18" /></svg>
             Vivier
           </button>
@@ -268,7 +294,7 @@ export default function SetWar({ userName }: { userName?: string }) {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3v18h18" /><path d="M7 14l4-4 3 3 4-5" /></svg>
             Stats
           </button>
-          <button className="sw-navit" onClick={() => flash("Profil — bientôt")}>
+          <button className={"sw-navit" + (screen === "profil" ? " on" : "")} onClick={() => setScreen("profil")}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4 4-6 8-6s8 2 8 6" /></svg>
             Profil
           </button>
@@ -628,6 +654,150 @@ function Stats({ stats, first }: { stats: any; first: string }) {
   );
 }
 
+/* ═══════════ Vivier : CRM complet ═══════════ */
+function Vivier({ rows, onOpen, onRelance }: { rows: Prospect[]; onOpen: (p: Prospect) => void; onRelance: (p: Prospect) => void }) {
+  const [q, setQ] = useState("");
+  const [stg, setStg] = useState<string>("all");
+
+  const counts = useMemo(() => {
+    const c: Record<string, number> = {};
+    for (const p of rows) c[p.stage] = (c[p.stage] || 0) + 1;
+    return c;
+  }, [rows]);
+
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return rows
+      .filter((p) => (stg === "all" ? true : p.stage === stg))
+      .filter((p) => (!needle ? true : (p.handle + " " + (p.interet || "") + " " + (p.need || "") + " " + (p.note || "")).toLowerCase().includes(needle)))
+      .sort((a, b) => new Date(b.last_activity_at).getTime() - new Date(a.last_activity_at).getTime());
+  }, [rows, q, stg]);
+
+  const stagesPresent = ALL_STAGES.filter((s) => counts[s.v]);
+
+  return (
+    <div className="sw-screen">
+      <header className="sw-head">
+        <div className="sw-top"><div className="sw-mark">Ton <b>vivier</b></div><div className="sw-date">{rows.length} prospects</div></div>
+        <div className="sw-hello">Tout ton pipeline.</div>
+        <div className="sw-searchbar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4-4" /></svg>
+          <input placeholder="Chercher un @pseudo, un besoin…" value={q} autoCapitalize="none" autoCorrect="off" onChange={(e) => setQ(e.target.value)} />
+          {q && <button className="sw-clr" onClick={() => setQ("")}>✕</button>}
+        </div>
+      </header>
+
+      <div className="sw-fils">
+        <button className={"sw-fil" + (stg === "all" ? " on" : "")} onClick={() => setStg("all")}>Tous <span className="sw-cnt">{rows.length}</span></button>
+        {stagesPresent.map((s) => (
+          <button key={s.v} className={"sw-fil" + (stg === s.v ? " on" : "")} onClick={() => setStg(stg === s.v ? "all" : s.v)}>
+            {s.l}<span className="sw-cnt">{counts[s.v]}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="sw-list">
+        {filtered.length === 0 && (
+          <div className="sw-empty"><div className="sw-emark">🔍</div><h3>Rien ici.</h3><p>Aucun prospect ne correspond.</p></div>
+        )}
+        {filtered.map((p) => {
+          const done = DONE_STAGES.includes(p.stage);
+          return (
+            <div key={p.id} className="sw-vrow" onClick={() => onOpen(p)}>
+              <div className={"sw-ava " + (p.stage === "vendu" ? "hot" : p.stage === "rdv_pris" ? "blue" : "")}>{initialOf(p.handle)}</div>
+              <div className="sw-rid">
+                <div className="sw-rname">@{p.handle}</div>
+                <div className="sw-rsub">{p.interet || p.need || p.source}{p.rdv_at ? ` · RDV ${new Date(p.rdv_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })}` : ""}</div>
+              </div>
+              <div className="sw-vstage" data-s={p.stage}>{stageLabel(p.stage)}</div>
+              {!done && (
+                <button className="sw-vquick" onClick={(e) => { e.stopPropagation(); onRelance(p); }} aria-label="Relancer">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></svg>
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════ Profil : identité, niveau, série, réglages ═══════════ */
+function Profil({ first, userName, stats, rows, onFlash }: { first: string; userName?: string; stats: any; rows: Prospect[]; onFlash: (m: string) => void }) {
+  const db = getSupabase();
+  const s = stats || {};
+  const vendus = s.vendus || 0;
+  const rdv = s.rdv || 0;
+
+  // niveau simple basé sur les résultats vérifiables (ventes + RDV)
+  const score = vendus * 3 + rdv;
+  const level = score >= 30 ? { name: "Pro", pct: 100, next: null } :
+                score >= 12 ? { name: "Confirmé", pct: Math.round(((score - 12) / 18) * 100), next: "Pro" } :
+                { name: "Débutant", pct: Math.round((score / 12) * 100), next: "Confirmé" };
+
+  const totalProspects = rows.length;
+  const active = rows.filter((p) => !DONE_STAGES.includes(p.stage)).length;
+
+  async function logout() {
+    await db.auth.signOut();
+    onFlash("Déconnexion…");
+  }
+
+  return (
+    <div className="sw-screen">
+      <header className="sw-head">
+        <div className="sw-top"><div className="sw-mark">Ton <b>profil</b></div></div>
+        <div className="sw-pidentity">
+          <div className="sw-ava hot" style={{ width: 64, height: 64, fontSize: 26, borderRadius: 20 }}>{initialOf(first)}</div>
+          <div>
+            <div className="sw-pname">{userName || first}</div>
+            <div className="sw-prole">Setter · niveau {level.name}</div>
+          </div>
+        </div>
+      </header>
+
+      <div className="sw-list">
+        <div className="sw-sect">Ta progression</div>
+        <div className="sw-levelcard">
+          <div className="sw-leveltop">
+            <span className="sw-levelname">{level.name}</span>
+            {level.next && <span className="sw-levelnext">→ {level.next}</span>}
+          </div>
+          <div className="sw-levelbar"><i style={{ width: `${level.pct}%` }} /></div>
+          <div className="sw-levelhint">
+            {level.next ? `Encore quelques ventes et RDV pour débloquer ${level.next}.` : "Niveau max atteint. Tu es au sommet 🔥"}
+          </div>
+        </div>
+
+        <div className="sw-pgrid">
+          <div className="sw-pstat"><b>{vendus}</b><span>ventes</span></div>
+          <div className="sw-pstat"><b>{rdv}</b><span>RDV</span></div>
+          <div className="sw-pstat"><b>{active}</b><span>en cours</span></div>
+          <div className="sw-pstat"><b>{totalProspects}</b><span>au total</span></div>
+        </div>
+
+        <div className="sw-sect">Réglages</div>
+        <button className="sw-prow" onClick={() => onFlash("Bientôt — notifications")}>
+          <span>🔔 Notifications</span><span className="sw-parr">›</span>
+        </button>
+        <button className="sw-prow" onClick={() => onFlash("Bientôt — script froid")}>
+          <span>💬 Mon script d'approche</span><span className="sw-parr">›</span>
+        </button>
+        <button className="sw-prow" onClick={() => onFlash("Bientôt — aide")}>
+          <span>❓ Aide & astuces</span><span className="sw-parr">›</span>
+        </button>
+        <button className="sw-prow logout" onClick={logout}>
+          <span>Se déconnecter</span>
+        </button>
+
+        <div className="sw-note-mini">SetWar · console setter — connecté à ClipWar.</div>
+      </div>
+    </div>
+  );
+}
+
+
 /* ═══════════ Ajout prospect ═══════════ */
 function AddSheet({ onClose, onDone }: { onClose: () => void; onDone: (m: string) => void }) {
   const db = getSupabase();
@@ -863,6 +1033,40 @@ function SetWarStyle() {
     .sw-fnl .bar div{height:100%;background:var(--lime);border-radius:6px}
     .sw-fnl .n{width:26px;text-align:right;font-weight:800}
     .sw-note-mini{font-size:12px;color:var(--mut2);line-height:1.5;padding:14px 8px;font-style:italic}
+    /* vivier */
+    .sw-searchbar{display:flex;align-items:center;gap:10px;margin-top:16px;background:var(--card);border:1px solid var(--line2);border-radius:14px;padding:0 14px}
+    .sw-searchbar svg{width:18px;height:18px;color:var(--mut2);flex:none}
+    .sw-searchbar input{flex:1;background:none;border:none;color:var(--txt);font-family:inherit;font-size:15px;padding:13px 0;outline:none}
+    .sw-searchbar input::placeholder{color:var(--mut2)}
+    .sw-clr{background:none;border:none;color:var(--mut2);font-size:15px;cursor:pointer;padding:4px}
+    .sw-vrow{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 14px;margin-bottom:9px;cursor:pointer;transition:transform .2s,border-color .2s}
+    .sw-vrow:active{transform:scale(.99);border-color:var(--line2)}
+    .sw-vrow .sw-ava{width:40px;height:40px;font-size:15px;border-radius:12px}
+    .sw-vstage{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.02em;color:var(--mut);border:1px solid var(--line2);padding:4px 8px;border-radius:7px;white-space:nowrap}
+    .sw-vstage[data-s="vendu"]{color:var(--lime);border-color:rgba(205,251,94,.3)}
+    .sw-vstage[data-s="rdv_pris"],.sw-vstage[data-s="rdv_honore"]{color:var(--blue);border-color:rgba(107,167,255,.3)}
+    .sw-vstage[data-s="perdu"]{color:var(--mut2);opacity:.7}
+    .sw-vquick{flex:none;width:36px;height:36px;border-radius:11px;background:var(--card2);border:1px solid var(--line2);color:var(--mut);display:flex;align-items:center;justify-content:center;cursor:pointer}
+    .sw-vquick svg{width:17px;height:17px}
+    .sw-vquick:active{background:var(--lime);color:var(--lime-ink)}
+    /* profil */
+    .sw-pidentity{display:flex;align-items:center;gap:15px;margin-top:14px}
+    .sw-pname{font-size:22px;font-weight:800;letter-spacing:-.02em}
+    .sw-prole{font-size:13px;color:var(--mut);margin-top:3px;font-weight:500}
+    .sw-levelcard{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;margin-bottom:14px}
+    .sw-leveltop{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+    .sw-levelname{font-size:16px;font-weight:800;color:var(--lime)}
+    .sw-levelnext{font-size:12px;font-weight:700;color:var(--mut2)}
+    .sw-levelbar{height:8px;border-radius:20px;background:#1C1F23;overflow:hidden}
+    .sw-levelbar i{display:block;height:100%;background:var(--lime);border-radius:20px;box-shadow:0 0 12px rgba(205,251,94,.4);transition:width .5s}
+    .sw-levelhint{font-size:12.5px;color:var(--mut);margin-top:10px;line-height:1.5}
+    .sw-pgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:6px}
+    .sw-pstat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 6px;text-align:center}
+    .sw-pstat b{display:block;font-size:22px;font-weight:800}
+    .sw-pstat span{font-size:10px;color:var(--mut2);text-transform:uppercase;letter-spacing:.03em;font-weight:700}
+    .sw-prow{width:100%;display:flex;align-items:center;justify-content:space-between;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:15px 16px;margin-bottom:9px;font-family:inherit;font-size:14.5px;font-weight:600;color:var(--txt);cursor:pointer}
+    .sw-parr{color:var(--mut2);font-size:18px}
+    .sw-prow.logout{justify-content:center;color:var(--hot);border-color:rgba(255,139,107,.25);margin-top:6px}
     /* nav */
     .sw-nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:520px;display:flex;align-items:center;justify-content:space-around;padding:12px 20px calc(14px + env(safe-area-inset-bottom));background:linear-gradient(to top,var(--bg) 60%,transparent);z-index:20}
     .sw-navit{background:none;border:none;color:var(--mut2);display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10px;font-weight:600;cursor:pointer;font-family:inherit}
